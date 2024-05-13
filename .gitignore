@@ -1,0 +1,11 @@
+/build
+__pycache__
+*.DS_Store
+*.egg-info
+**.ipynb_checkpoints
+**.idea
+*.mzML
+*.mzXML
+*ckpt
+*pt
+*lightning_logs*
