@@ -1,5 +1,5 @@
 import numpy as np
-from msml.utils.spectra import bin_peak_list, bin_peak_lists
+from dreams.utils.spectra import bin_peak_list, bin_peak_lists
 
 
 class RandomProjection:
