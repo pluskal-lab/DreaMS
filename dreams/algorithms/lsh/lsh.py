@@ -5,6 +5,11 @@ from dreams.utils.spectra import bin_peak_list, bin_peak_lists
 class RandomProjection:
     def __init__(self, n_elems: int, n_hyperplanes: int, seed=3):
         np.random.seed(seed)
+        if (n_hyperplanes % 64) != 0: 
+            n_hyperplanes_ = round(n_hyperplanes / 64) * 64
+            print(f"n_hyperplanes ({n_hyperplanes}) must be divisible by 64. rounding it to {n_hyperplanes_}.")
+            n_hyperplanes = n_hyperplanes_
+
         self.H = np.random.randn(n_hyperplanes, n_elems)
 
     def compute(self, x: np.array, as_int=True, batched=False):
@@ -14,8 +19,10 @@ class RandomProjection:
             proj_signs = self.H @ x >= 0
 
         if as_int:
-            # Binary representation boolean array to integer
-            proj_signs = proj_signs.dot(1 << np.arange(proj_signs.shape[-1] - 1, -1, -1))
+            # Binary representation boolean array to integer    
+            proj_signs_u8 = proj_signs.astype(np.uint8) # N, n_hyp
+            proj_signs_u64 = np.packbits(proj_signs_u8, axis=1).view(np.uint64) # N, (n_hyp//8)
+            proj_signs = np.bitwise_xor.reduce(proj_signs_u64, axis=1) # N,
         return proj_signs
 
 
