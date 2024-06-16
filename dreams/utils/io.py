@@ -557,3 +557,13 @@ def clean_ftps(ftps: dict, verbose=True):
     ftps_clean = {urlparse.quote(f): ftps[f] for f in ftps_clean}
 
     return ftps_clean
+
+
+def compress_hdf(hdf_pth, compression='gzip', compression_opts=9):
+    with h5py.File(hdf_pth, 'r') as f:
+        with h5py.File(append_to_stem(hdf_pth, 'compressed'), 'w') as f_out:
+            for k in f.keys():
+                f_out.create_dataset(
+                    k, data=f[k][:], shape=f[k].shape, dtype=f[k].dtype,
+                    compression=compression, compression_opts=compression_opts
+                )
