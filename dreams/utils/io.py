@@ -24,6 +24,7 @@ from typing import Tuple, List, Optional
 from itertools import groupby
 from tqdm import tqdm
 import dreams.utils.spectra as su
+import dreams.utils.misc as utils
 from dreams.definitions import *
 
 
@@ -342,8 +343,8 @@ def read_textual_ms_format(pth, spectrum_end_line, name_value_sep, prec_mz_name,
 
     # Two numbers separated with a white space
     peak_pattern = re.compile(r'\b([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\s([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\b')
-    # A word followed by a number separated with `name_value_sep`
-    attr_pattern = re.compile(rf'^\s*([A-Z]+){name_value_sep}([+-]?\d+(\.\d*)?)\s*$')
+    # A word followed by an arbitrary string separated with `name_value_sep`
+    attr_pattern = re.compile(rf'^\s*([A-Z_]+){name_value_sep}(.*)\s*$')
     attr_mapping = {prec_mz_name: PRECURSOR_MZ, charge_name: CHARGE, adduct_name: ADDUCT}
 
     data = []
@@ -365,12 +366,15 @@ def read_textual_ms_format(pth, spectrum_end_line, name_value_sep, prec_mz_name,
             spec = {SPECTRUM: [[], []]}
             if i != 0:
                 continue
+
         # Attributes parsing
         match = attr_pattern.match(line)
         if match:
-            k, v = match.group(1), float(match.group(2))
-            if v.is_integer():
-                v = int(v)
+            k, v = match.group(1), match.group(2)
+            if utils.is_float(v):
+                v = float(v)
+                if v.is_integer():
+                    v = int(v)
             if k in attr_mapping:
                 k = attr_mapping[k]
             spec[k] = v
@@ -383,6 +387,7 @@ def read_textual_ms_format(pth, spectrum_end_line, name_value_sep, prec_mz_name,
             spec[SPECTRUM][0].append(mz)
             spec[SPECTRUM][1].append(intensity)
             continue
+
     return pd.DataFrame(data)
 
 

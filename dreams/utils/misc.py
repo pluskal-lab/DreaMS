@@ -8,6 +8,14 @@ from collections import Counter
 from typing import Sequence
 
 
+def is_float(s):
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
+
+
 def lists_to_legends(lists):
     """
     E.g. [['a', 'b', 'c'], [1, 2, 3]] -> ['a | 1', 'b | 2', 'c | 3'].
