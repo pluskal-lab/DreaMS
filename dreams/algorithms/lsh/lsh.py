@@ -6,8 +6,8 @@ class RandomProjection:
     def __init__(self, n_elems: int, n_hyperplanes: int, seed=3):
         np.random.seed(seed)
         if (n_hyperplanes % 64) != 0: 
-            n_hyperplanes_ = round(n_hyperplanes / 64) * 64
-            print(f"n_hyperplanes ({n_hyperplanes}) must be divisible by 64. rounding it to {n_hyperplanes_}.")
+            n_hyperplanes_ = round(n_hyperplanes / 64) * 64 if n_hyperplanes > 64 else 64
+            print(f"n_hyperplanes ({n_hyperplanes}) must be positive and divisible by 64. rounding it to {n_hyperplanes_}.")
             n_hyperplanes = n_hyperplanes_
 
         self.H = np.random.randn(n_hyperplanes, n_elems)
@@ -27,7 +27,7 @@ class RandomProjection:
 
 
 class PeakListRandomProjection:
-    def __init__(self, bin_step=0.05, max_mz=1500., n_hyperplanes=50, seed=3):
+    def __init__(self, bin_step=0.5, max_mz=1000., n_hyperplanes=64, seed=3):
         assert (max_mz / bin_step) % 1 == 0
         self.bin_step = bin_step
         self.max_mz = max_mz
@@ -45,7 +45,7 @@ class BatchedPeakListRandomProjection(PeakListRandomProjection):
     If subbatch_size is specified additionally splits peak lists into subbatch_size (if RAM is limited).
     """
 
-    def __init__(self, bin_step=0.5, max_mz=1000., n_hyperplanes=30, subbatch_size=None, seed=3):
+    def __init__(self, bin_step=0.5, max_mz=1000., n_hyperplanes=64, subbatch_size=None, seed=3):
         super().__init__(bin_step, max_mz, n_hyperplanes, seed)
         self.subbatch_size = subbatch_size
 
