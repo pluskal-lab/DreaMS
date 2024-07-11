@@ -416,7 +416,6 @@ def load_hdf5_in_mem(dct):
 class MSData:
     # TODO: smart indexing (like iloc)
     # TODO: utf-8 decode string columns
-    # TODO: show spectrum (plot + all metadata)
     # TODO: do not load all columns in memory?
     def __init__(self, hdf5_pth: Union[Path, str], in_mem=False, mode='r'):
         self.hdf5_pth = Path(hdf5_pth)
@@ -542,8 +541,7 @@ class MSData:
     @staticmethod
     def from_mgf(pth: Path, in_mem=True):
         df = io.read_mgf(pth)
-        MSData.from_pandas(df, in_mem=in_mem, hdf5_pth=pth.with_suffix('.hdf5'))
-        return MSData(pth.with_suffix('.hdf5'), in_mem=in_mem)
+        return MSData.from_pandas(df, in_mem=in_mem, hdf5_pth=pth.with_suffix('.hdf5'))
 
     @staticmethod
     def load(pth: Union[Path, str], in_mem=False):
