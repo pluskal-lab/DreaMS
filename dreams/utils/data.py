@@ -18,6 +18,7 @@ from torch.utils.data.dataset import Dataset, Subset
 from pandarallel import pandarallel
 from torchmetrics.functional import pairwise_cosine_similarity, pairwise_euclidean_distance
 from statistics import mean
+from matchms import Spectrum
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from rdkit import Chem
@@ -582,17 +583,21 @@ class MSData:
     def get_values(self, col, idx=None):
         return self.data[col][idx] if idx is not None else self.data[col][:]
 
+    def __len__(self):
+        return self.num_spectra
+
     def __getitem__(self, col):
         return self.get_values(col)
 
-    def at(self, i, plot=True):
+    def at(self, i, plot=True, return_spec=False):
         if plot:
             su.plot_spectrum(self.data[SPECTRUM][i])
             if SMILES in self.columns():
                 display(Chem.MolFromSmiles(self.data[SMILES][i]))
-            return {k: self.data[k][i] for k in self.columns() if k != SPECTRUM}
-        else:
-            return {k: self.data[k][i] for k in self.columns()}
+        res = {k: self.data[k][i] for k in self.columns()}
+        if not return_spec:
+            del res[SPECTRUM]
+        return res
 
     def get_spectra(self, idx=None):
         return self.get_values(SPECTRUM, idx)
@@ -638,6 +643,21 @@ class MSData:
             for k in self.columns():
                 f.create_dataset(k, data=self.get_values(k)[:][idx])
         return MSData(out_pth)
+
+    def spec_to_matchms(self, i: int) -> Spectrum:
+        spec = su.unpad_peak_list(self.get_spectra(i))
+        metadata = self.at(i, plot=False, return_spec=False)
+        return Spectrum(
+            mz=spec[0],
+            intensities=spec[1],
+            metadata=metadata
+        )
+
+    def to_matchms(self, progress_bar=True) -> List[Spectrum]:
+        return [
+            self.spec_to_matchms(i)
+            for i in tqdm(range(len(self)), desc='Converting to matchms', disable=not progress_bar)
+        ]
 
     @staticmethod
     def merge(
