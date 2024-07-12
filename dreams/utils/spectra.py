@@ -266,8 +266,10 @@ def _bin_peak_list(peak_list: np.array, max_mz: float, bin_step: float) -> list:
     mzs, intensities = peak_list
 
     bin_ub = bin_step
+    num_bins = int(max_mz / bin_step)
+
     binned_pl = []
-    while bin_ub <= max_mz:
+    for _ in range(num_bins):  # Iterate over number of bins to avoid floating point errors
         bin_intensity = 0.
         for i, mz in enumerate(mzs):
             if bin_ub - bin_step <= mz < bin_ub:
