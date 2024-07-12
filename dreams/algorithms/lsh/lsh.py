@@ -55,14 +55,20 @@ class BatchedPeakListRandomProjection(PeakListRandomProjection):
         return self.rand_projection.compute(bpls, as_int=as_int, batched=True)
 
     def compute(self, peak_lists: np.array, as_int=True, logger=None, progress_bar=True):
-        if not self.subbatch_size or self.subbatch_size >= peak_lists.shape[0]:
+        n = peak_lists.shape[0]
+        
+        if not self.subbatch_size or self.subbatch_size >= n:
             return self.__compute_batch(peak_lists, as_int=as_int)
 
         lshs = []
-        batch_idx = range(0, peak_lists.shape[0], self.subbatch_size)
-        for i in batch_idx if not progress_bar else tqdm(batch_idx):
-            if logger:
-                logger.info(f'Computing LSH for batch [{i}:{i+self.subbatch_size}] (out of {peak_lists.shape[0]})...')
-            lshs.append(self.__compute_batch(peak_lists[i:i+self.subbatch_size, ...], as_int=as_int))
+        batch_idx = range(0, n, self.subbatch_size)
+        
+        with tqdm(total=n, disable=not progress_bar) as pbar:
+            for i in batch_idx:
+                if logger:
+                    logger.info(f'Computing LSH for batch [{i}:{i+self.subbatch_size}] (out of {n})...')
+                lshs.append(self.__compute_batch(peak_lists[i:i+self.subbatch_size, ...], as_int=as_int))
+                pbar.update(min(self.subbatch_size, n - i))
+        
         return np.concatenate(lshs)
 
