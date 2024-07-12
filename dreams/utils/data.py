@@ -438,7 +438,6 @@ class MSData:
         if in_mem:
             print(f'Loading dataset {self.hdf5_pth.name} into memory ({self.num_spectra} spectra)...')
             self.data = self.load_hdf5_in_mem(self.f)
-            print('data', self.data)
 
     def __del__(self):
         self.f.close()
