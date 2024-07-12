@@ -414,25 +414,22 @@ def load_hdf5_in_mem(dct):
 
 
 class MSData:
-    # TODO: smart indexing (like iloc)
-    # TODO: utf-8 decode string columns
-    # TODO: do not load all columns in memory?
     def __init__(self, hdf5_pth: Union[Path, str], in_mem=False, mode='r'):
         self.hdf5_pth = Path(hdf5_pth)
         self.f = h5py.File(hdf5_pth, mode)
 
-        for k in [SPECTRUM, PRECURSOR_MZ]: #[SPECTRUM_STR, PREC_MZ_STR]:
+        for k in [SPECTRUM, PRECURSOR_MZ]:
             if k not in self.f.keys():
                 raise ValueError(f'Column "{k}" is not present in the dataset {hdf5_pth}.')
 
-        # if self.f[SPECTRUM_STR].shape[1] != 2 or len(self.f[SPECTRUM_STR].shape) != 3:
-        #     raise ValueError('Shape of spectra has to be (num_spectra, 2 (m/z, intensity), num_peaks).')
+        if self.f[SPECTRUM].shape[1] != 2 or len(self.f[SPECTRUM].shape) != 3:
+            raise ValueError('Shape of spectra has to be (num_spectra, 2 (m/z, intensity), num_peaks).')
 
         num_spectra = set()
         for k in self.f.keys():
             num_spectra.add(self.f[k].shape[0])
         if len(num_spectra) != 1:
-            raise ValueError(f'Columns in {hdf5_pth} have different number of spectra.')
+            raise ValueError(f'Columns in {hdf5_pth} have different number of entries.')
 
         self.in_mem = in_mem
         self.num_spectra = num_spectra.pop()
@@ -440,7 +437,8 @@ class MSData:
 
         if in_mem:
             print(f'Loading dataset {self.hdf5_pth.name} into memory ({self.num_spectra} spectra)...')
-            self.data = load_hdf5_in_mem(self.f)
+            self.data = self.load_hdf5_in_mem(self.f)
+            print('data', self.data)
 
     def __del__(self):
         self.f.close()
@@ -448,9 +446,21 @@ class MSData:
     def columns(self):
         return list(self.data.keys())
 
+
     def load_col_in_mem(self, col):
-        if not self.in_mem:
-            self.data[col] = self.f[col][:]
+        if isinstance(col, h5py.Group):
+            return self.load_hdf5_in_mem(col)
+        else:
+            col = col[:]
+            if col.dtype == object:
+                col = col.astype(str)
+            return col
+
+    def load_hdf5_in_mem(self, group):
+        data = {}
+        for key, item in group.items():
+            data[key] = self.load_col_in_mem(item)
+        return data
 
     @staticmethod
     def from_hdf5(pth: Path, in_mem=False):
@@ -462,11 +472,11 @@ class MSData:
         n_highest_peaks=128,
         spec_col=SPECTRUM,  # The default values are set according to NIST20 format
         prec_mz_col=PRECURSOR_MZ,
-        # adduct_col='PRECURSOR TYPE',
+        adduct_col=ADDUCT,
         charge_col=CHARGE,
-        # smiles_col='SMILES',
+        smiles_col=SMILES,
         ignore_cols=('ROMol'),
-        in_mem=False,
+        in_mem=True,
         hdf5_pth=None
     ):
 
@@ -510,12 +520,12 @@ class MSData:
 
                     if k == prec_mz_col:
                         k = PRECURSOR_MZ
-                    # elif k == adduct_col:
-                    #     k = ADDUCT
+                    elif k == adduct_col:
+                        k = ADDUCT
                     elif k == charge_col:
                         k = CHARGE
-                    # elif k == smiles_col:
-                    #     k = SMILES
+                    elif k == smiles_col:
+                        k = SMILES
 
                 f.create_dataset(k, data=v)
         return MSData(hdf5_pth, in_mem=in_mem)
@@ -539,9 +549,9 @@ class MSData:
         # return MSData(pth.with_suffix('.hdf5'), in_mem=in_mem)
 
     @staticmethod
-    def from_mgf(pth: Path, in_mem=True):
+    def from_mgf(pth: Path, **kwargs):
         df = io.read_mgf(pth)
-        return MSData.from_pandas(df, in_mem=in_mem, hdf5_pth=pth.with_suffix('.hdf5'))
+        return MSData.from_pandas(df, hdf5_pth=pth.with_suffix('.hdf5'), **kwargs)
 
     @staticmethod
     def load(pth: Union[Path, str], in_mem=False):
