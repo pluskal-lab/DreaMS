@@ -20,7 +20,7 @@ class RandomProjection:
             proj_signs = self.H @ x >= 0
 
         if as_int:
-            # Binary representation boolean array to integer    
+            # Binary representation of a boolean array as integer    
             proj_signs_u8 = proj_signs.astype(np.uint8) # N, n_hyp
             proj_signs_u64 = np.packbits(proj_signs_u8, axis=1).view(np.uint64) # N, (n_hyp//8)
             proj_signs = np.bitwise_xor.reduce(proj_signs_u64, axis=1) # N,
@@ -36,17 +36,17 @@ class PeakListRandomProjection:
 
     def compute(self, peak_list: np.array, as_int=True):
         bpl = bin_peak_list(peak_list, self.max_mz, self.bin_step)
-        # bpl = np.power(bpl, 2)
         return self.rand_projection.compute(bpl, as_int=as_int)
 
 
 class BatchedPeakListRandomProjection(PeakListRandomProjection):
     """
     Uses numba code to compute hashes for peak_lists given in a shape (num_peak_lists, 2, num_peaks).
-    If subbatch_size is specified additionally splits peak lists into subbatch_size (if RAM is limited).
+    If subbatch_size is specified additionally splits peak lists into subbatch_size (should be used when dataset is
+    large).
     """
 
-    def __init__(self, bin_step=0.5, max_mz=1000., n_hyperplanes=64, subbatch_size=None, seed=3):
+    def __init__(self, bin_step=0.5, max_mz=1000., n_hyperplanes=64, subbatch_size=32, seed=3):
         super().__init__(bin_step, max_mz, n_hyperplanes, seed)
         self.subbatch_size = subbatch_size
 
