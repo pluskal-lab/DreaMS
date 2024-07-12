@@ -588,10 +588,8 @@ class MSData:
     def at(self, i, plot=True):
         if plot:
             su.plot_spectrum(self.data[SPECTRUM][i])
-            # TODO
-            # import matplotlib.pyplot as plt
-            # Chem.MolFromSmiles(self.data[SMILES][i])
-            # plt.show()
+            if SMILES in self.columns():
+                display(Chem.MolFromSmiles(self.data[SMILES][i]))
             return {k: self.data[k][i] for k in self.columns() if k != SPECTRUM}
         else:
             return {k: self.data[k][i] for k in self.columns()}
