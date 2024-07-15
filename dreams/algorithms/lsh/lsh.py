@@ -17,11 +17,12 @@ class RandomProjection:
             proj_signs = np.einsum('ij,kj->ki', self.H, x) >= 0
             if as_str:
                 # Convert each row of the boolean array to bytes and hash using SHA-256
-                return np.apply_along_axis(self.__arr_to_str_hash, 1, proj_signs)
+                proj_signs = np.apply_along_axis(self.__arr_to_str_hash, 1, proj_signs)
         else:
             proj_signs = self.H @ x >= 0
             if as_str:
-                return self.__arr_to_str_hash(proj_signs)
+                proj_signs = self.__arr_to_str_hash(proj_signs)
+        return proj_signs
 
 
 class PeakListRandomProjection:
