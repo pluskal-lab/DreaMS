@@ -1,1 +1,5 @@
-# To be done
+- [ ] Data import.
+- [ x ] LSH clustering.
+- [ ] Library matching.
+- [ ] Molecular networking.
+- [ ] DreaMS Atlas.
