@@ -60,8 +60,11 @@ class PreTrainedModel:
         return ['Fluorine probability', 'Molecular properties', DREAMS_EMBEDDING]
 
 
-def compute_dreams_predictions(model_ckpt: Union[PreTrainedModel, FineTuningHead, DreaMSModel, Path, str], spectra: Union[Path, str],
-                           model_cls=None, batch_size=32, tqdm_batches=True, write_log=False, n_highest_peaks=None, title=''):
+def compute_dreams_predictions(
+        model_ckpt: Union[PreTrainedModel, FineTuningHead, DreaMSModel, Path, str], spectra: Union[Path, str],
+        model_cls=None, batch_size=32, tqdm_batches=True, write_log=False, n_highest_peaks=None, title='',
+        **msdata_kwargs
+    ):
 
     # TODO: samples in tqmd progress instead of batches
 
@@ -87,7 +90,7 @@ def compute_dreams_predictions(model_ckpt: Union[PreTrainedModel, FineTuningHead
         spectra = Path(spectra)
     spectra_pth = spectra
 
-    msdata = du.MSData.load(spectra)
+    msdata = du.MSData.load(spectra, **msdata_kwargs)
     spectra = msdata.to_torch_dataset(spec_preproc)
     dataloader = DataLoader(spectra, batch_size=batch_size, shuffle=False, drop_last=False)
 
@@ -122,8 +125,10 @@ def compute_dreams_predictions(model_ckpt: Union[PreTrainedModel, FineTuningHead
     return preds
 
 
-def compute_dreams_embeddings(pth, batch_size=32, tqdm_batches=True, write_log=False):
-    return compute_dreams_predictions(DREAMS_EMBEDDING, pth, batch_size=batch_size, tqdm_batches=tqdm_batches, write_log=write_log)
+def compute_dreams_embeddings(pth, batch_size=32, tqdm_batches=True, write_log=False, **msdata_kwargs):
+    return compute_dreams_predictions(
+        DREAMS_EMBEDDING, pth, batch_size=batch_size, tqdm_batches=tqdm_batches, write_log=write_log, **msdata_kwargs
+    )
 
 
 def generate_all_dreams_predictions(pth: Union[Path, str], batch_size=32, tqdm_batches=True,
