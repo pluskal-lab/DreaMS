@@ -9,7 +9,7 @@ This GitHub repository is a work in progress. We are planning to transform it in
 Run the following code from the command line.
 
 ``` shell
-git clone https://github.com/roman-bushuiev/DreaMS.git; cd DreaMS
+git clone https://github.com/pluskal-lab/DreaMS.git; cd DreaMS
 . scripts/install.sh
 . scripts/download_models.sh
 ```
