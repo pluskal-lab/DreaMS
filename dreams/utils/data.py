@@ -543,10 +543,10 @@ class MSData:
 
     @staticmethod
     def from_msp(pth: Path, in_mem=True):
-        pass
-        # df = io.read_msp(pth)
-        # MSData.from_pandas(df, in_mem=in_mem, df_pth=pth)
-        # return MSData(pth.with_suffix('.hdf5'), in_mem=in_mem)
+        raise NotImplementedError('Not tested but should work.')
+        df = io.read_msp(pth)
+        MSData.from_pandas(df, in_mem=in_mem, df_pth=pth)
+        return MSData(pth.with_suffix('.hdf5'), in_mem=in_mem)
 
     @staticmethod
     def from_mgf(pth: Path, **kwargs):
@@ -554,18 +554,18 @@ class MSData:
         return MSData.from_pandas(df, hdf5_pth=pth.with_suffix('.hdf5'), **kwargs)
 
     @staticmethod
-    def load(pth: Union[Path, str], in_mem=False):
+    def load(pth: Union[Path, str], in_mem=False, **kwargs):
         pth = Path(pth)
         if pth.suffix.lower() == '.hdf5':
-            return MSData.from_hdf5(pth, in_mem=in_mem)
+            return MSData.from_hdf5(pth, in_mem=in_mem, **kwargs)
         elif pth.suffix.lower() == '.mzml':
-            return MSData.from_mzml(pth, in_mem=in_mem)
+            return MSData.from_mzml(pth, in_mem=in_mem, **kwargs)
         elif pth.suffix.lower() == '.msp':
-            return MSData.from_msp(pth, in_mem=in_mem)
+            return MSData.from_msp(pth, in_mem=in_mem, **kwargs)
         elif pth.suffix.lower() == '.mgf':
-            return MSData.from_mgf(pth, in_mem=in_mem)
+            return MSData.from_mgf(pth, in_mem=in_mem, **kwargs)
         elif pth.suffix.lower() == '.pkl':
-            return MSData.from_pandas(pth, in_mem=in_mem)
+            return MSData.from_pandas(pth, in_mem=in_mem, **kwargs)
         else:
             raise NotImplementedError(f'Loading from {pth.suffix} is not implemented.')
 
@@ -641,7 +641,8 @@ class MSData:
     def form_subset(self, idx, out_pth):
         with h5py.File(out_pth, 'w') as f:
             for k in self.columns():
-                f.create_dataset(k, data=self.get_values(k)[:][idx])
+                print(f'Creating dataset "{k}"...')
+                f.create_dataset(k, data=self.get_values(k)[:][idx], dtype=self.f[k].dtype)
         return MSData(out_pth)
 
     def spec_to_matchms(self, i: int) -> Spectrum:
