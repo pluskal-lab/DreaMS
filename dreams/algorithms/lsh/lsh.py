@@ -7,40 +7,21 @@ from dreams.utils.spectra import bin_peak_list, bin_peak_lists
 class RandomProjection:
     def __init__(self, n_elems: int, n_hyperplanes: int, seed=3):
         np.random.seed(seed)
-        # if (n_hyperplanes % 64) != 0: 
-        #     n_hyperplanes_ = round(n_hyperplanes / 64) * 64 if n_hyperplanes > 64 else 64
-        #     print(f"n_hyperplanes ({n_hyperplanes}) must be positive and divisible by 64. rounding it to {n_hyperplanes_}.")
-        #     n_hyperplanes = n_hyperplanes_
-
         self.H = np.random.randn(n_hyperplanes, n_elems)
+
+    def __arr_to_str_hash(self, arr: np.array) -> str:
+        return hashlib.sha256(arr.tobytes()).hexdigest()
 
     def compute(self, x: np.array, as_str=True, batched=False):
         if batched:
             proj_signs = np.einsum('ij,kj->ki', self.H, x) >= 0
+            if as_str:
+                # Convert each row of the boolean array to bytes and hash using SHA-256
+                return np.apply_along_axis(self.__arr_to_str_hash, 1, proj_signs)
         else:
             proj_signs = self.H @ x >= 0
-
-        if as_str:
-            # Convert each row of the boolean array to bytes and hash using SHA-256
-            proj_signs_hashed = np.apply_along_axis(
-                lambda row: hashlib.sha256(row.tobytes()).hexdigest(), 1, proj_signs
-            )
-            return proj_signs_hashed
-            
-        return proj_signs
-
-        # if as_int:
-        #     # Binary representation of a boolean array as integer 
-        #     print('-'*50)   
-        #     proj_signs_u8 = proj_signs.astype(np.uint8) # N, n_hyp
-        #     print(proj_signs_u8.shape)
-        #     proj_signs_u64 = np.packbits(proj_signs_u8, axis=1).view(np.uint64) # N, (n_hyp//8)
-        #     print(proj_signs_u64.shape)
-        #     print(proj_signs_u64[0])
-        #     proj_signs = np.bitwise_xor.reduce(proj_signs_u64, axis=1) # N,
-        #     print(proj_signs[0])
-
-        return proj_signs
+            if as_str:
+                return self.__arr_to_str_hash(proj_signs)
 
 
 class PeakListRandomProjection:
@@ -50,9 +31,9 @@ class PeakListRandomProjection:
         self.max_mz = max_mz
         self.rand_projection = RandomProjection(n_elems=int(max_mz / bin_step), n_hyperplanes=n_hyperplanes, seed=seed)
 
-    def compute(self, peak_list: np.array, as_int=True):
+    def compute(self, peak_list: np.array, as_str=True):
         bpl = bin_peak_list(peak_list, self.max_mz, self.bin_step)
-        return self.rand_projection.compute(bpl, as_int=as_int)
+        return self.rand_projection.compute(bpl, as_str=as_str)
 
 
 class BatchedPeakListRandomProjection(PeakListRandomProjection):
@@ -66,15 +47,15 @@ class BatchedPeakListRandomProjection(PeakListRandomProjection):
         super().__init__(bin_step, max_mz, n_hyperplanes, seed)
         self.subbatch_size = subbatch_size
 
-    def __compute_batch(self, peak_lists: np.array, as_int: bool):
+    def __compute_batch(self, peak_lists: np.array, as_str: bool):
         bpls = bin_peak_lists(peak_lists, self.max_mz, self.bin_step)
-        return self.rand_projection.compute(bpls, as_int=as_int, batched=True)
+        return self.rand_projection.compute(bpls, as_str=as_str, batched=True)
 
-    def compute(self, peak_lists: np.array, as_int=True, logger=None, progress_bar=True):
+    def compute(self, peak_lists: np.array, as_str=True, logger=None, progress_bar=True):
         n = peak_lists.shape[0]
         
         if not self.subbatch_size or self.subbatch_size >= n:
-            return self.__compute_batch(peak_lists, as_int=as_int)
+            return self.__compute_batch(peak_lists, as_str=as_str)
 
         lshs = []
         batch_idx = range(0, n, self.subbatch_size)
@@ -83,7 +64,7 @@ class BatchedPeakListRandomProjection(PeakListRandomProjection):
             for i in batch_idx:
                 if logger:
                     logger.info(f'Computing LSH for batch [{i}:{i+self.subbatch_size}] (out of {n})...')
-                lshs.append(self.__compute_batch(peak_lists[i:i+self.subbatch_size, ...], as_int=as_int))
+                lshs.append(self.__compute_batch(peak_lists[i:i+self.subbatch_size, ...], as_str=as_str))
                 pbar.update(min(self.subbatch_size, n - i))
         
         return np.concatenate(lshs)
