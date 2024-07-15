@@ -66,8 +66,6 @@ def compute_dreams_predictions(
         **msdata_kwargs
     ):
 
-    # TODO: samples in tqmd progress instead of batches
-
     # Load pre-trained model
     if not isinstance(model_ckpt, PreTrainedModel):
         if isinstance(model_ckpt, str):
@@ -103,11 +101,13 @@ def compute_dreams_predictions(
     if not title:
         title = 'DreaMS_prediction'
     preds = None
-    for i, batch in enumerate(tqdm(
-        dataloader,
+    progress_bar = tqdm(
+        total=len(spectra),
         desc='Computing ' + title.replace('_', ' '),
-        disable=not tqdm_batches, file=tqdm_logger if write_log else None
-    )):
+        disable=not tqdm_batches,
+        file=tqdm_logger if write_log else None
+    )
+    for i, batch in enumerate(dataloader):
         with torch.inference_mode():
             pred = model(batch['spec'].to(device=model.device, dtype=model.dtype))
 
@@ -117,6 +117,10 @@ def compute_dreams_predictions(
                 preds = pred
             else:
                 preds = torch.cat([preds, pred])
+
+            # Update the progress bar by the number of samples in the current batch
+            progress_bar.update(len(batch['spec']))
+    progress_bar.close()
 
     preds = preds.squeeze().cpu().numpy()
 
