@@ -1,5 +1,5 @@
 - [ ] Data import.
-- [ x ] LSH clustering.
+- [x] LSH clustering.
 - [ ] Library matching.
 - [ ] Molecular networking.
 - [ ] DreaMS Atlas.
