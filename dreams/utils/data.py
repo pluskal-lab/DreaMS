@@ -415,7 +415,7 @@ def load_hdf5_in_mem(dct):
 
 
 class MSData:
-    def __init__(self, hdf5_pth: Union[Path, str], in_mem=False, mode='r'):
+    def __init__(self, hdf5_pth: Union[Path, str], in_mem=False, mode='r', spec_col=SPECTRUM, prec_mz_col=PRECURSOR_MZ):
         self.hdf5_pth = Path(hdf5_pth)
         self.f = h5py.File(hdf5_pth, mode)
 
@@ -463,8 +463,8 @@ class MSData:
         return data
 
     @staticmethod
-    def from_hdf5(pth: Path, in_mem=False):
-        return MSData(pth, in_mem=in_mem)
+    def from_hdf5(pth: Path, in_mem=False, **kwargs):
+        return MSData(pth, in_mem=in_mem, **kwargs)
 
     @staticmethod
     def from_pandas(
@@ -531,18 +531,16 @@ class MSData:
         return MSData(hdf5_pth, in_mem=in_mem)
 
     @staticmethod
-    def from_mzml(pth: Path, in_mem=True):
+    def from_mzml(pth: Path, **kwargs):
         # TODO: use mzml reader from process_ms_file.py, move it here
         # TODO: refactor trimming and padding, no hard-coded 128
-        # TODO: refactor column names in mzml reader
-        pass
+
         # hdf_pth = pth.with_suffix('.hdf5')
-        # df = io.read_mzml(pth)
-        # MSData.from_pandas(df, in_mem=in_mem, df_pth=pth)
-        # return MSData(hdf_pth, in_mem=in_mem)
+        df = io.read_mzml(pth)
+        return MSData.from_pandas(df, hdf5_pth=pth.with_suffix('.hdf5'), **kwargs)
 
     @staticmethod
-    def from_msp(pth: Path, in_mem=True):
+    def from_msp(pth: Path, in_mem=True, **kwargs):
         raise NotImplementedError('Not tested but should work.')
         df = io.read_msp(pth)
         MSData.from_pandas(df, in_mem=in_mem, df_pth=pth)
@@ -581,7 +579,13 @@ class MSData:
         return pd.DataFrame(df)
 
     def get_values(self, col, idx=None):
-        return self.data[col][idx] if idx is not None else self.data[col][:]
+        col = self.data[col]
+        col = col[idx] if idx is not None else col[:]
+        if isinstance(col, bytes):
+            col = col.decode('utf-8')
+        elif col.dtype == object:
+            col = col.astype(str)
+        return col
 
     def __len__(self):
         return self.num_spectra
@@ -589,11 +593,13 @@ class MSData:
     def __getitem__(self, col):
         return self.get_values(col)
 
-    def at(self, i, plot=True, return_spec=False):
-        if plot:
+    def at(self, i, plot_mol=False, plot_spec=True, return_spec=False):
+        if plot_spec:
             su.plot_spectrum(self.data[SPECTRUM][i])
-            if SMILES in self.columns():
-                display(Chem.MolFromSmiles(self.data[SMILES][i]))
+        if plot_mol:
+            if SMILES not in self.columns():
+                raise ValueError('Molecule information is not present in the dataset.')
+            display(Chem.MolFromSmiles(self.data[SMILES][i]))
         res = {k: self.data[k][i] for k in self.columns()}
         if not return_spec:
             del res[SPECTRUM]
