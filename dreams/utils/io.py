@@ -412,7 +412,7 @@ def read_mgf(pth):
     )
 
 
-def read_mzml(pth: Path, progress_bar=True, ):
+def read_mzml(pth: Path, verbose=False):
     exp = oms.MSExperiment()
     if pth.suffix.lower() == '.mzml':
         oms.MzMLFile().load(str(pth), exp)
@@ -422,17 +422,25 @@ def read_mzml(pth: Path, progress_bar=True, ):
         raise ValueError(f'Unsupported file extension: {pth.suffix}.')
 
     df = []
-    for i, spec in enumerate(tqdm(exp, desc=f'Reading {pth.name}', disable=not progress_bar)):
+    automatic_scans_message = False
+    for i, spec in enumerate(tqdm(exp, desc=f'Reading {pth.name}', disable=not verbose)):
         if spec.getMSLevel() != 2:
             continue
 
         scan_i = re.search(r'scan=(\d+)', spec.getNativeID())
-        scan_i = int(scan_i.group(1)) if scan_i else i + 1
+        if scan_i:
+            scan_i = int(scan_i.group(1))
+        else:
+            if verbose and not automatic_scans_message:
+                print(f'Assigning scan numbers automatically (no "scan=" in the file).')
+            scan_i = i + 1
+            automatic_scans_message = True
 
         peak_list = np.stack(spec.get_peaks())
-        spec_problems = su.is_valid_peak_list(peak_list, relative_intensities=False, return_problems_list=True, verbose=progress_bar)
+        spec_problems = su.is_valid_peak_list(peak_list, relative_intensities=False, return_problems_list=True, verbose=verbose)
         if spec_problems:
-            print(f'Skipping spectrum {i} in {pth.name} with problems: {spec_problems}.')
+            if verbose:
+                print(f'Skipping spectrum {i} in {pth.name} with problems: {spec_problems}.')
             continue
 
         prec = spec.getPrecursors()
@@ -441,12 +449,12 @@ def read_mzml(pth: Path, progress_bar=True, ):
         prec = prec[0]
 
         df.append({
-            'FILE NAME': pth.name,
-            'SCAN NUMBER': scan_i,
-            'PARSED PEAKS': peak_list,
-            'PRECURSOR M/Z': prec.getMZ(),
-            'RT': spec.getRT(),
-            'CHARGE': prec.getCharge(),
+            FILE_NAME: pth.name,
+            SCAN_NUMBER: scan_i,
+            SPECTRUM: peak_list,
+            PRECURSOR_MZ: prec.getMZ(),
+            RT: spec.getRT(),
+            CHARGE: prec.getCharge(),
         })
 
     df = pd.DataFrame(df)
