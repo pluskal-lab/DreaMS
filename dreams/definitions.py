@@ -49,6 +49,8 @@ DATASET = 'dataset'
 ID = 'id'
 DREAMS_EMBEDDING = 'DreaMS_embedding'
 RT = 'RT'
+SCAN_NUMBER = 'scan_number'
+FILE_NAME = 'file_name'
 
 def export():
     # Export paths to environment variables
