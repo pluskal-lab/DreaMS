@@ -468,7 +468,7 @@ class MSData:
 
     @staticmethod
     def from_pandas(
-        df: Union[Path, pd.DataFrame],
+        df: Union[Path, str, pd.DataFrame],
         n_highest_peaks=128,
         spec_col=SPECTRUM,  # The default values are set according to NIST20 format
         prec_mz_col=PRECURSOR_MZ,
@@ -481,6 +481,8 @@ class MSData:
     ):
 
         # Load dataframe
+        if isinstance(df, str):
+            df = Path(df)
         if isinstance(df, Path):
             df = pd.read_pickle(df)
             hdf5_pth = df.with_suffix('.hdf5')
@@ -531,23 +533,26 @@ class MSData:
         return MSData(hdf5_pth, in_mem=in_mem)
 
     @staticmethod
-    def from_mzml(pth: Path, **kwargs):
+    def from_mzml(pth: Union[Path, str], **kwargs):
         # TODO: use mzml reader from process_ms_file.py, move it here
         # TODO: refactor trimming and padding, no hard-coded 128
 
         # hdf_pth = pth.with_suffix('.hdf5')
+        pth = Path(pth)
         df = io.read_mzml(pth)
         return MSData.from_pandas(df, hdf5_pth=pth.with_suffix('.hdf5'), **kwargs)
 
     @staticmethod
-    def from_msp(pth: Path, in_mem=True, **kwargs):
+    def from_msp(pth: Union[Path, str], in_mem=True, **kwargs):
         raise NotImplementedError('Not tested but should work.')
+        pth = Path(pth)
         df = io.read_msp(pth)
         MSData.from_pandas(df, in_mem=in_mem, df_pth=pth)
         return MSData(pth.with_suffix('.hdf5'), in_mem=in_mem)
 
     @staticmethod
-    def from_mgf(pth: Path, **kwargs):
+    def from_mgf(pth: Union[Path, str], **kwargs):
+        pth = Path(pth)
         df = io.read_mgf(pth)
         return MSData.from_pandas(df, hdf5_pth=pth.with_suffix('.hdf5'), **kwargs)
 

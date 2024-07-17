@@ -20,7 +20,7 @@ from functools import cache
 from matchms.importing import load_from_mgf
 from pathlib import Path
 from matchms import Spectrum
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Union
 from itertools import groupby
 from tqdm import tqdm
 import dreams.utils.spectra as su
@@ -412,7 +412,9 @@ def read_mgf(pth):
     )
 
 
-def read_mzml(pth: Path, verbose=False):
+def read_mzml(pth: Union[Path, str], verbose=False):
+    if isinstance(pth, str):
+        pth = Path(pth)
     exp = oms.MSExperiment()
     if pth.suffix.lower() == '.mzml':
         oms.MzMLFile().load(str(pth), exp)
