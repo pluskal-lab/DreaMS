@@ -419,11 +419,11 @@ class MSData:
         self.hdf5_pth = Path(hdf5_pth)
         self.f = h5py.File(hdf5_pth, mode)
 
-        for k in [SPECTRUM, PRECURSOR_MZ]:
+        for k in [spec_col, prec_mz_col]:
             if k not in self.f.keys():
                 raise ValueError(f'Column "{k}" is not present in the dataset {hdf5_pth}.')
 
-        if self.f[SPECTRUM].shape[1] != 2 or len(self.f[SPECTRUM].shape) != 3:
+        if self.f[spec_col].shape[1] != 2 or len(self.f[spec_col].shape) != 3:
             raise ValueError('Shape of spectra has to be (num_spectra, 2 (m/z, intensity), num_peaks).')
 
         num_spectra = set()
@@ -477,7 +477,8 @@ class MSData:
         smiles_col=SMILES,
         ignore_cols=('ROMol'),
         in_mem=True,
-        hdf5_pth=None
+        hdf5_pth=None,
+        compression_opts=0
     ):
 
         # Load dataframe
@@ -529,7 +530,7 @@ class MSData:
                     elif k == smiles_col:
                         k = SMILES
 
-                f.create_dataset(k, data=v)
+                f.create_dataset(k, data=v, compression='gzip', compression_opts=compression_opts)
         return MSData(hdf5_pth, in_mem=in_mem)
 
     @staticmethod
@@ -537,7 +538,6 @@ class MSData:
         # TODO: use mzml reader from process_ms_file.py, move it here
         # TODO: refactor trimming and padding, no hard-coded 128
 
-        # hdf_pth = pth.with_suffix('.hdf5')
         pth = Path(pth)
         df = io.read_mzml(pth)
         return MSData.from_pandas(df, hdf5_pth=pth.with_suffix('.hdf5'), **kwargs)
@@ -551,10 +551,10 @@ class MSData:
         return MSData(pth.with_suffix('.hdf5'), in_mem=in_mem)
 
     @staticmethod
-    def from_mgf(pth: Union[Path, str], **kwargs):
+    def from_mgf(pth: Union[Path, str], in_mem=False, **kwargs):
         pth = Path(pth)
         df = io.read_mgf(pth)
-        return MSData.from_pandas(df, hdf5_pth=pth.with_suffix('.hdf5'), **kwargs)
+        return MSData.from_pandas(df, hdf5_pth=pth.with_suffix('.hdf5'), in_mem=in_mem, **kwargs)
 
     @staticmethod
     def load(pth: Union[Path, str], in_mem=False, **kwargs):
