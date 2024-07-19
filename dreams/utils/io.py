@@ -574,7 +574,7 @@ def clean_ftps(ftps: dict, verbose=True):
     return ftps_clean
 
 
-def compress_hdf(hdf_pth, out_pth=None, compression='gzip', compression_opts=9):
+def compress_hdf(hdf_pth, out_pth=None, compression='gzip', compression_opts=4):
     if out_pth is None:
         out_pth = append_to_stem(hdf_pth, 'compressed')
     with h5py.File(hdf_pth, 'r') as f:
