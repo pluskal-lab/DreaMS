@@ -24,6 +24,7 @@ pip install igraph==0.11.4
 pip install Cython==3.0.9
 pip install git+https://github.com/YuanyueLi/SpectralEntropy.git@master
 pip install jupyter==1.0.0
+pip install molplotly==1.1.7
 
 # Install DreaMS
 pip install -e .
