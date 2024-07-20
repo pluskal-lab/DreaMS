@@ -388,7 +388,7 @@ def estimate_peak_list_type(pl: np.array, to_int=True, verbose=False):
     return spec_type.value if to_int else spec_type
 
 
-def standartize_species(species: pd.Series):
+def standartize_gnps_species(species: pd.Series):
 
     # Lowercase
     species = species.str.lower()
