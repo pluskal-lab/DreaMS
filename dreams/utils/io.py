@@ -313,35 +313,6 @@ def read_ms(pth, peaks_tag='>ms2peaks', charge_tag='#Charge', prec_mz_tag='#Prec
         return data
 
 
-# def read_mgf(pth, skip_empty_spectra=False, charge_col='charge', prec_mz_col='precursor_mz', smiles_col='smiles'):
-#     spectra = load_from_mgf(str(pth))
-#     df = []
-#     for s in tqdm(spectra):
-#
-#         # Read peak list data
-#         row = {'PARSED PEAKS': s.peaks.to_numpy.T}
-#         if skip_empty_spectra and row['PARSED PEAKS'].size == 0:
-#             continue
-#
-#         # Read metadata
-#         row.update(s.metadata)
-#
-#         # Rename major columns
-#         if charge_col:
-#             row['CHARGE'] = row.pop(charge_col)
-#         if prec_mz_col:
-#             row['PRECURSOR M/Z'] = row.pop(prec_mz_col)
-#
-#         df.append(row)
-#     df = pd.DataFrame(df)
-#
-#     # Obtain rdkit molecules from SMILES
-#     if smiles_col:
-#         df['ROMol'] = df[smiles_col].apply(Chem.MolFromSmiles)
-#
-#     return df
-
-
 def read_textual_ms_format(pth, spectrum_end_line, name_value_sep, prec_mz_name, charge_name=None, adduct_name=None,
                            ignore_line_prefixes=()):
     # TODO: this is very raw and dirty.
