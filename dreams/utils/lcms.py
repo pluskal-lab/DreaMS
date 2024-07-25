@@ -324,23 +324,19 @@ def get_pwiz_stats(msdata):
     return pwiz_stats
 
 
-def pyopenms_type_to_spectype(pyopenms_type: pyms.SpectrumSettings.SpectrumType, to_int=False):
-    """
-    WARNING: assumes pyopenms.__version__ == 2.6.0. In version 2.7.0 pyopenms SpectrumType enum was modified.
-    https://github.com/OpenMS/pyopenms-docs/issues/294
-    https://github.com/OpenMS/OpenMS/commit/60d0a40bc498cee3f47b9926933df1b804b3b3cd
-    """
+def get_spectrum_type(spec: pyms.MSSpectrum, to_int=False) -> SpecType:
 
-    assert pyms.__version__ == '2.6.0', 'See https://github.com/OpenMS/pyopenms-docs/issues/294.'
-
+    if spec is None:
+        return None
+    pyopenms_type = spec.getType()
     if pyopenms_type is None:
         return None
 
     if pyopenms_type == pyms.SpectrumSettings.SpectrumType.UNKNOWN:  # 0 enum int
         spec_type = SpecType.UNKNOWN
-    elif pyopenms_type == pyms.SpectrumSettings.SpectrumType.PEAKS:  # 1 enum int
+    elif pyopenms_type == pyms.SpectrumSettings.SpectrumType.CENTROID:  # 1 enum int
         spec_type = SpecType.CENTROID
-    elif pyopenms_type == pyms.SpectrumSettings.SpectrumType.RAWDATA:  # 2 enum int
+    elif pyopenms_type == pyms.SpectrumSettings.SpectrumType.PROFILE:  # 2 enum int
         spec_type = SpecType.PROFILE
     elif pyopenms_type == pyms.SpectrumSettings.SpectrumType.SIZE_OF_SPECTRUMTYPE:  # 3 enum int
         spec_type = SpecType.SIZE_OF_SPECTRUMTYPE
