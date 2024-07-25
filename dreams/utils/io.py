@@ -4,6 +4,7 @@ import pickle
 import json
 import os
 import h5py
+import click
 import re
 import numpy as np
 import pandas as pd
@@ -467,6 +468,32 @@ def read_mzml(pth: Union[Path, str], verbose=False):
     return df
 
 
+@click.command()
+@click.option('-i', '--input_path', required=True, help='Path to an input file (.mzML or .mzXML).')
+@click.option('-o', '--output_path', help='Path to an output file (.hdf5). If not provided, the output is '
+                    'stored as --input_path file name with .hdf5 extension.')
+@click.option('--store_precursors', is_flag=True, default=True, help='Store the data of precursor spectra (peak '
+                    'list and scan id) for each MSn spectrum as a separate hdf5 dataset.')
+@click.option('--num_peaks', type=int, help='M/z values and intensities of MSn peak lists will be padded '
+                    'with zeros at the right side up to the length of n_peaks. If num_peaks is not specified it '
+                    'would be set to a max num. of peaks within spectra that are to be stored.')
+@click.option('--num_prec_peaks', type=int, help='M/z values and intensities of MS1 peak lists will be '
+                    'padded with zeros at the right side up to the length of n_peaks. If num_peaks is not ' 
+                    'specified it would be set to a max num. of peaks within spectra that are to be stored.')
+@click.option('--compress_peaks_lvl', type=int, default=0, help='Compression level for peak lists in output '
+                    '.hdf5 (integer from 0 to 9).')
+@click.option('--compress_full_lvl', type=int, default=0, help='Compression level for all stored attributes '
+                    '(e.g. RTs, polarities, etc.) except for peak lists.')
+@click.option('--pwiz_stats', is_flag=True, help='Collect ProteoWizard msconvert statistics: '
+                    'histogram of types of spectra converted by msconvert and number of spectra centroided by '
+                    'msconvert but having zero intensities.')
+@click.option('--del_in', is_flag=True, help='Delete the input .mzML or .mzXML file.')
+@click.option('--verbose', is_flag=True, help='Log scan number for each invalid spectrum and log '
+                    'additional statistics. The statistics are redundant in a sense that they can be calculated '   
+                    'from the output .hdf5 file but are helpful for the fast analysis of the input file and '
+                    'debugging.')
+@click.option('--log_path', help='Input to the log file containing errors during opening of files and flaws '
+                    'of invalid spectra. If set to None, the logger prints to stdout.')
 def lcmsms_to_hdf5(
         input_path,
         output_path=None,
@@ -480,6 +507,8 @@ def lcmsms_to_hdf5(
         verbose=False,
         log_path=None
     ):
+
+    print('Hello', store_precursors)
 
     # If log_path is None then logger prints to stdout
     logger = setup_logger(log_path)
@@ -973,3 +1002,15 @@ def compress_hdf(hdf_pth, out_pth=None, compression='gzip', compression_opts=4):
                     k, data=f[k][:], shape=f[k].shape, dtype=f[k].dtype,
                     compression=compression, compression_opts=compression_opts
                 )
+
+
+@click.group()
+def cli():
+    pass
+
+
+cli.add_command(lcmsms_to_hdf5)
+
+
+if __name__ == '__main__':
+    cli()
