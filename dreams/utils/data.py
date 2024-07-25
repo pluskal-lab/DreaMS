@@ -441,6 +441,7 @@ class MSData:
             self.data = self.load_hdf5_in_mem(self.f)
 
     def __del__(self):
+        # TODO: optionally delete the file on exit
         self.f.close()
 
     def columns(self):
@@ -551,7 +552,7 @@ class MSData:
         return MSData(pth.with_suffix('.hdf5'), in_mem=in_mem)
 
     @staticmethod
-    def from_mgf(pth: Union[Path, str], in_mem=False, **kwargs):
+    def from_mgf(pth: Union[Path, str], in_mem=True, **kwargs):
         pth = Path(pth)
         df = io.read_mgf(pth)
         return MSData.from_pandas(df, hdf5_pth=pth.with_suffix('.hdf5'), in_mem=in_mem, **kwargs)
