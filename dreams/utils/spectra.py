@@ -261,6 +261,9 @@ def num_high_peaks(peak_list, high_intensity_thld):
     return (peak_list[1] > high_intensity_thld).sum()
 
 
+def max_mz(peak_list):
+    return peak_list[0].max()
+
 @njit()
 def _bin_peak_list(peak_list: np.array, max_mz: float, bin_step: float) -> list:
     mzs, intensities = peak_list
