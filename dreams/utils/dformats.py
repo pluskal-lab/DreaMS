@@ -1,4 +1,6 @@
 import pandas as pd
+import numpy as np
+import typing as T
 import dreams.utils.spectra as su
 from abc import ABC
 
@@ -7,19 +9,88 @@ class DataFormat(ABC):
     """
     Abstract class for DataFormats.
     """
+
+    # LC-MS quality filters
     min_file_spectra: int = NotImplementedError
+    max_tbxic_stdev: float = NotImplementedError
+
+    # MS/MS quality filters 
     max_ms_level: int = NotImplementedError
     min_peaks_n: int = NotImplementedError
     max_peaks_n: int = NotImplementedError
     min_charge: int = NotImplementedError
     max_charge: int = NotImplementedError
     min_intensity_ampl: float = NotImplementedError
-    max_tbxic_stdev: float = NotImplementedError
     max_prec_mz: float = NotImplementedError
     max_mz: float = NotImplementedError
     high_intensity_thld: float = NotImplementedError
+
+    # LSH parameters
     lsh_n_hplanes: int = NotImplementedError
     lsh_bin_size: float = NotImplementedError
+
+    def val_spec(
+            self,
+            spec: np.ndarray,
+            prec_mz: float,
+            tbxic_stdev: T.Optional[float] = None,
+            charge: T.Optional[int] = None,
+            mslevel: T.Optional[int] = None,
+            verbose: bool = False
+        ) -> bool:
+
+        if spec.shape[0] != 2:
+            raise ValueError('The input array should have 2 rows (m/z and intensity).')
+
+        # Check metadata
+        if mslevel is not None and mslevel > self.max_ms_level:
+            if verbose:
+                print(f"MS level check failed. Expected <= {self.max_ms_level}, got {mslevel}")
+            return False
+        if prec_mz is not None and prec_mz > self.max_prec_mz:
+            if verbose:
+                print(f"Precursor m/z check failed. Expected <= {self.max_prec_mz}, got {prec_mz}")
+            return False
+        if tbxic_stdev is not None and tbxic_stdev > self.max_tbxic_stdev:
+            if verbose:
+                print(f"TBXIC stdev check failed. Expected <= {self.max_tbxic_stdev}, got {tbxic_stdev}")
+            return False
+        if charge is not None and (charge < self.min_charge or charge > self.max_charge):
+            if verbose:
+                print(f"Charge check failed. Expected between {self.min_charge} and {self.max_charge}, got {charge}")
+            return False
+
+        # Check number of peaks
+        if spec.shape[1] < self.min_peaks_n or spec.shape[1] > self.max_peaks_n:
+            if verbose:
+                print(f"Number of peaks check failed. Expected between {self.min_peaks_n} and {self.max_peaks_n}, got {spec.shape[1]}")
+            return False
+        
+        # Check mz range
+        if su.max_mz(spec) > self.max_mz:
+            if verbose:
+                print(f"m/z range check failed. Expected <= {self.max_mz}, got {su.max_mz(spec)}")
+            return False
+        
+        # Make relative intensities for the following checks
+        spec = su.to_rel_intensity(spec)
+
+        # Check intensity amplitude
+        if su.intens_amplitude(spec) < self.min_intensity_ampl:
+            if verbose:
+                print(f"Intensity amplitude check failed. Expected >= {self.min_intensity_ampl}, got {su.intens_amplitude(spec)}")
+            return False
+        
+        # Check number of high intensity peaks
+        if su.num_high_peaks(spec, self.high_intensity_thld) < self.min_peaks_n:
+            if verbose:
+                print(f"Number of high intensity peaks check failed. Expected >= {self.min_peaks_n}, got {su.num_high_peaks(spec, self.high_intensity_thld)}")
+            return False
+        
+        if verbose:
+            print('All checks passed')
+
+        return True
 
 
 class DataFormatA(DataFormat):
@@ -101,6 +172,16 @@ class DataFormatBuilder:
     def get_dformat(self):
         return self.dformat
 
+
+def assign_dformat(spec: np.ndarray, **kwargs) -> str:
+    for e in ['A', 'B', 'C']:
+        dformat = DataFormatBuilder(e).get_dformat()
+        if dformat.val_spec(spec, **kwargs):
+            return e
+    return '-'
+
+
+### Legacy code
 
 def to_A_format(df: pd.DataFrame, filter=True, trimming=False, reset_index=True, verbose=True, add_msn_col=True,
                 filter_block_mask=None):
