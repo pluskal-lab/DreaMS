@@ -2,7 +2,7 @@
 
 Source code for the paper ["Emergence of molecular structures from repository-scale self-supervised learning on tandem mass spectra"](https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f).
 
-This GitHub repository is a work in progress. We are planning to transform it into a user-friendly Python package during July 2024.
+This GitHub repository is a work in progress. We are planning to transform it into a user-friendly Python package during July-August 2024.
 
 ## How to install
 
