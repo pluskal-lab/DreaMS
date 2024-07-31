@@ -22,7 +22,8 @@ class RandomProjection:
             proj_signs = self.H @ x >= 0
             if as_str:
                 proj_signs = self.__arr_to_str_hash(proj_signs)
-        return proj_signs
+
+        return proj_signs.astype('S64')
 
 
 class PeakListRandomProjection:
