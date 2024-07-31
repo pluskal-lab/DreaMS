@@ -1,0 +1,6 @@
+sphinx
+m2r2==0.3.3.post2
+sphinx-rtd-theme
+nbsphinx==0.9.4
+lxml_html_clean
+mistune==0.8.4
