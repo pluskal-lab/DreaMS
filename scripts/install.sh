@@ -25,6 +25,7 @@ pip install Cython==3.0.9
 pip install git+https://github.com/YuanyueLi/SpectralEntropy.git@master
 pip install jupyter==1.0.0
 pip install molplotly==1.1.7
+pip install fire==0.6.0
 
 # Install DreaMS
 pip install -e .

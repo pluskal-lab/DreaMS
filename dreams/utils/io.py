@@ -24,17 +24,15 @@ from functools import cache
 from matchms.importing import load_from_mgf
 from pathlib import Path
 from matchms import Spectrum
-from typing import Tuple, List, Optional, Union
+from typing import Tuple, List, Optional, Union, Iterable
 from itertools import groupby
 from tqdm import tqdm
 import dreams.utils.spectra as su
 import dreams.utils.misc as utils
 import dreams.utils.lcms as lcms
 import dreams.utils.dformats as dformats
+from dreams.algorithms.lsh import BatchedPeakListRandomProjection
 from dreams.definitions import *
-
-
-LOG_INFO_PREF_LEN = len('2022-09-20 21:04:45,234 | INFO |')
 
 
 def setup_logger(log_file_path=None, log_name='log'):
@@ -86,6 +84,13 @@ def append_to_stem(pth: Path, s, sep='_'):
     path/to/file.txt -> path/to/file{sep}{s}.txt
     """
     return pth.parents[0] / f'{pth.stem}{sep}{s}{pth.suffix}'
+
+
+def prepend_to_stem(pth: Path, s, sep='_'):
+    """
+    path/to/file.txt -> path/to/{s}{sep}file.txt
+    """
+    return pth.parents[0] / f'{s}{sep}{pth.stem}{pth.suffix}'
 
 
 @cache
@@ -441,23 +446,53 @@ def read_mzml(pth: Union[Path, str], verbose=False):
 
 
 def lcmsms_to_hdf5(
-        input_path,
-        output_path=None,
-        num_peaks=None,
-        num_prec_peaks=None,
-        store_precursors=True,
-        compress_peaks_lvl=0,
-        compress_full_lvl=0,
-        pwiz_stats=False,
-        del_in=False,
-        assign_dformats=True,
-        log_path=None,
-        verbose=False
+    input_path,
+    output_path=None,
+    num_peaks=None,
+    num_prec_peaks=None,
+    store_precursors=True,
+    compress_peaks_lvl=0,
+    compress_full_lvl=0,
+    pwiz_stats=False,
+    del_in=False,
+    assign_dformats=True,
+    log_path=None,
+    verbose=False
     ):
+    """
+    Convert LC-MS/MS data from an input file (.mzML or .mzXML) to an output file (.hdf5).
+
+    Args:
+    input_path (str): Path to the input file (.mzML or .mzXML).
+    output_path (str, optional): Path to the output file (.hdf5). If not provided, the output is stored as the
+        input file name with .hdf5 extension.
+    num_peaks (int, optional): The number of peaks to pad the MSn peak lists with zeros. If not specified, it
+        will be set to the maximum number of peaks within the spectra that are to be stored.
+    num_prec_peaks (int, optional): The number of peaks to pad the MS1 peak lists with zeros. If not specified,
+        it will be set to the maximum number of peaks within the spectra that are to be stored.
+    store_precursors (bool, optional): Whether to store the data of precursor spectra (peak list and scan id) for
+        each MSn spectrum as a separate hdf5 dataset. Defaults to True.
+    compress_peaks_lvl (int, optional): The compression level for peak lists in the output .hdf5 file. Should be an
+        integer from 0 to 9. Defaults to 0.
+    compress_full_lvl (int, optional): The compression level for all stored attributes (e.g. RTs, polarities, etc.)
+        except for peak lists. Should be an integer from 0 to 9. Defaults to 0.
+    pwiz_stats (bool, optional): Whether to collect ProteoWizard msconvert statistics, including the histogram of
+        types of spectra converted by msconvert and the number of spectra centroided by msconvert but having zero
+        intensities. Defaults to False.
+    del_in (bool, optional): Whether to delete the input .mzML or .mzXML file. Defaults to False.
+    assign_dformats (bool, optional): Whether to assign data formats to MSn spectra. Defaults to True.
+    log_path (str, optional): Path to the log file containing errors during opening of files and flaws of invalid
+        spectra. If set to None, the log file is stored as the input file name with .hdf5 extension.
+    verbose (bool, optional): Whether to log the scan number for each invalid spectrum and log additional
+        statistics. The statistics are redundant in a sense that they can be calculated from the output .hdf5 file
+        but are helpful for the fast analysis of the input file and debugging. Defaults to False.
+    """
+    input_path = str(input_path)
+    output_path = str(output_path) if output_path else None
 
     # Create a logger
     if not log_path:
-        log_path = os.path.splitext(input_path)[0] + '.log'
+        log_path = os.path.splitext(output_path)[0] + '.log'
     logger = setup_logger(log_path)
 
     # Parse the input file
@@ -718,6 +753,7 @@ def read_lcmsms(
         return df_msn_data, df_prec_data, file_props
     else:
         logger.warning('No MSn spectra collected, not storing .hdf5 file.')
+        return None, None, None
 
     logger.info(f'Finished processing {input_path}')
 
@@ -775,12 +811,12 @@ def parsed_lcmsms_to_hdf(
                                      compression_opts=compress_peaks_lvl)
             msn_group.create_dataset('MS level', data=df_msn_data['MS level'], dtype='i1',
                                      compression=compress_full_lvl)
-            msn_group.create_dataset('RT', data=df_msn_data['RT'], dtype='f4', compression=compress_full_lvl)
-            msn_group.create_dataset('charge', data=df_msn_data['charge'], dtype='i1',
+            msn_group.create_dataset(RT, data=df_msn_data['RT'], dtype='f4', compression=compress_full_lvl)
+            msn_group.create_dataset(CHARGE, data=df_msn_data['charge'], dtype='i1',
                                      compression=compress_full_lvl)
             msn_group.create_dataset('positive polarity', data=df_msn_data['positive polarity'], dtype='i1',
                                      compression=compress_full_lvl)
-            msn_group.create_dataset('precursor mz', data=df_msn_data['precursor mz'], dtype='f4',
+            msn_group.create_dataset(PRECURSOR_MZ, data=df_msn_data['precursor mz'], dtype='f4',
                                      compression=compress_full_lvl)
             msn_group.create_dataset('window lo', data=df_msn_data['window lo'], dtype='f4',
                                      compression=compress_full_lvl)
@@ -841,6 +877,201 @@ def parsed_lcmsms_to_hdf(
                                           dtype=h5py.string_dtype('utf-8', None), compression=compress_full_lvl)
 
 
+def downloadpublicdata_to_hdf5s(downloads_log: Path, del_in=True, verbose=False) -> None:
+    """
+    Convert downloaded LC-MS/MS data (e.g., .mzML or .mzXML) to .hdf5 format.
+
+    Args:
+    downloads_log (Path): Path to the log file from `downloadpublicdata` containing information about downloaded files.
+    del_in (bool, optional): Whether to delete the input files after conversion. Defaults to True.
+    verbose (bool, optional): Whether to print additional information during the conversion. Defaults to True.
+    """
+    # Open `downloadpublicdata` downloads log
+    df = pd.read_csv(downloads_log, sep='\t')
+
+    # Covert downloaded files to .hdf5 format
+    for _, row in df.iterrows():
+        in_pth = Path(row['target_path'])
+        if 'ERROR' not in row['status'] and in_pth.exists():
+            if verbose:
+                print(f"{row['usi']} was successfully downloaded.")
+            out_pth = prepend_to_stem(in_pth, row['usi'].split(':')[1]).with_suffix('.hdf5')
+            lcmsms_to_hdf5(input_path=in_pth, output_path=out_pth, verbose=verbose, del_in=del_in)
+        else:
+            if verbose:
+                print(f"Skipping {row['usi']} because it was not downloaded.")
+
+
+def merge_lcmsms_hdf5s(
+        in_pths: Union[Path, Iterable[Path]],
+        out_pth: Path,
+        dformat: str = 'A',
+        store_acc_est: bool = True,
+        verbose: bool = True
+    ):
+    """
+    Merge .hdf5 files generated with `lcmsms_to_hdf5`.
+
+    Args:
+    in_pths (Union[Path, Iterable[Path]]): Path to the directory with .hdf5 files or an iterable of .hdf5 files.
+    out_pth (Path): Path to the output .hdf5 file.
+    store_acc_est (bool, optional): Whether to store the instrument accuracy estimate in the output file. Defaults to True.
+    verbose (bool, optional): Whether to print additional information during the merging. Defaults to True.
+    """
+
+    if isinstance(in_pths, Path) and in_pths.is_dir():
+        in_pths = in_pths.glob('*.hdf5')
+
+    dformat_filters = dformats.DataFormatBuilder(dformat).get_dformat()
+
+    f_out = h5py.File(out_pth, 'w')
+    first_file = True
+    for in_pth in tqdm(list(in_pths), desc='Merging .hdf5 files', disable=not verbose):
+        with h5py.File(in_pth, 'r') as f_in:
+
+            # Check that the input file has a correct order of spectra and enough number of spectra
+            n_spectra = f_in['MSn data']['mzs'].shape[0]
+            if not f_in.attrs['Ordered RT']:
+                continue
+            if n_spectra < dformat_filters.min_file_spectra:
+                continue
+
+            # Compute dformats for MS/MS spectra if needed
+            if 'dformat' not in f_in['MSn data']:
+                # TODO: calculate here if not present
+                # TODO: in dformat calculation report invoked filters for further logging
+                raise NotImplementedError('No dformat in the input file.')
+
+            # Subset spectra accordign to the dformat
+            idx = np.where(f_in['MSn data']['dformat'][:].astype(str) == dformat)[0]
+            n_spectra = idx.shape[0]
+
+            # Check that the input file has enough spectra after subsetting
+            if idx.shape[0] < dformat_filters.min_file_spectra:
+                continue
+
+            # Trim or pad spectra to the maximum number of peaks
+            spectra = np.stack([f_in['MSn data']['mzs'][:][idx], f_in['MSn data']['intensities'][:][idx]], axis=1)
+            if spectra.shape[2] > dformat_filters.max_peaks_n:
+                spectra = su.trim_peak_list(spectra, dformat_filters.max_peaks_n)
+            elif spectra.shape[2] < dformat_filters.max_peaks_n:
+                spectra = su.pad_peak_list(spectra, dformat_filters.max_peaks_n)
+
+            # Define datasets to store
+            datasets = [
+                (SPECTRUM, spectra, f_in['MSn data']['mzs'].dtype),
+                (FILE_NAME, [in_pth.stem] * n_spectra, h5py.string_dtype())
+            ]
+            datasets.extend(
+                [(n, f_in['MSn data'][n][:][idx], f_in['MSn data'][n].dtype) for n in [CHARGE, PRECURSOR_MZ, RT]]
+            )
+            if store_acc_est:
+                datasets.append(
+                    ('instrument accuracy est.', np.repeat(f_in.attrs['TBXICs median stdev'], n_spectra), np.float32)
+                )
+
+            # Store datasets in the output file
+            for name, data, dtype in datasets:
+                if first_file:
+                    f_out.create_dataset(
+                        name, data=data, shape=data.shape if isinstance(data, np.ndarray) else (len(data),),
+                        maxshape=(None, *data.shape[1:]) if isinstance(data, np.ndarray) else (None,),
+                        dtype=dtype
+                    )
+                else:
+                    data_len = data.shape[0] if isinstance(data, np.ndarray) else len(data)
+                    f_out[name].resize(f_out[name].shape[0] + data_len, axis=0)
+                    f_out[name][-data_len:] = data
+            first_file = False
+
+
+
+
+def lsh_subset(in_pth, dformat, n_hplanes=None, bin_size=1, max_specs_per_lsh=None, seed=333):
+    """
+    Subset the input .hdf5 file using Locality Sensitive Hashing (LSH) algorithm.
+
+    Args:
+        input_path (str): Path to the input file.
+        dformat (DataFormatBuilder): Data format builder object.
+        n_hplanes (int, optional): Number of hyperplanes for LSH. Defaults to None.
+        bin_size (float, optional): Bin size for LSH. Defaults to 1.
+        max_specs_per_lsh (int, optional): Maximum number of spectra per LSH. Defaults to None.
+        seed (int, optional): Random seed for LSH initialization and selection. Defaults to 333.
+    """
+
+    assert n_hplanes is not None or max_specs_per_lsh is not None
+    out_suffix = ''
+    if max_specs_per_lsh is not None:
+        out_suffix += str(max_specs_per_lsh)
+    if n_hplanes is not None:
+        out_suffix += '_hplanes' + str(n_hplanes)
+    out_pth = append_to_stem(in_pth, out_suffix, sep='')
+
+    dformat = dformats.DataFormatBuilder(dformat).get_dformat()
+    logger = setup_logger(out_pth.with_suffix('.log'))
+    tqdm_logger = TqdmToLogger(logger)
+
+    with h5py.File(in_pth, 'r') as f_in:
+
+        logger.info('Opening input file...')
+
+        data = {}
+        for k in f_in.keys():
+            logger.info(f'Loading dataset "{k}" of shape {f_in[k].shape} into memory...')
+            data[k] = f_in[k][:]
+
+        with h5py.File(out_pth, 'w') as f_out:
+
+            if 'lsh' not in data.keys():
+
+                logger.info(f'Computing LSHs for {data[SPECTRUM].shape}...')
+
+                lsh = BatchedPeakListRandomProjection(
+                    subbatch_size=10_000, max_mz=dformat.max_mz,
+                    bin_step=bin_size, n_hyperplanes=n_hplanes, seed=seed
+                )
+
+                data['lsh'] = lsh.compute(data[SPECTRUM], logger=logger)
+
+            if max_specs_per_lsh is not None:
+
+                logger.info('Deduplicating spectra by LSHs...')
+                lshs = data['lsh']
+                np.random.seed(seed)
+
+                if max_specs_per_lsh == 1:
+                    logger.info('Keeping only unique LSHs...')
+                    _, filtered_idx = np.unique(lshs, return_index=True)
+                else:
+                    logger.info(f'Keeping {max_specs_per_lsh} spectra per LSHs...')
+                    lshs_unique, lshs_counts = np.unique(lshs, return_counts=True)
+
+                    filtered_idx = []
+                    non_filtered_lshs = []
+                    for lsh, count in tqdm(zip(lshs_unique, lshs_counts), file=tqdm_logger):
+                        if count > max_specs_per_lsh:
+                            idx = np.where(lshs == lsh)[0]
+                            filtered_idx.extend(np.random.choice(idx, max_specs_per_lsh, replace=False))
+                        else:
+                            non_filtered_lshs.append(lsh)
+                    filtered_idx.extend(np.where(np.isin(lshs, non_filtered_lshs))[0])
+
+                    filtered_idx = np.array(filtered_idx)
+                logger.info(f'Keeping {filtered_idx.shape[0]} / {data["lsh"].shape[0]} deduplicated spectra.')
+            else:
+                filtered_idx = np.arange(data['lsh'].shape[0])
+                logger.info(f'Keeping all {filtered_idx.shape[0]} spectra.')
+
+            for k in data.keys():
+                logger.info(f'Adding subdataset "{k}" corresponding to unique LSHs to {out_pth}...')
+                f_out.create_dataset(name=k, data=data[k][filtered_idx], shape=(filtered_idx.shape[0], *data[k].shape[1:]),
+                                     dtype=data[k].dtype)
+
+    logger.info('Done.')
+    return out_pth
+
+
 def save_nist_like_df_to_mgf(df, out_pth: Path, remove_mol_info=False):
     spectra = []
     for i, row in tqdm(df.iterrows()):
@@ -883,8 +1114,8 @@ def savefig(name, path, extension='pdf'):
 
 @contextlib.contextmanager
 def suppress_output():
-    new_stdout = std_io.StringIO()
-    new_stderr = std_io.StringIO()
+    new_stdout = std_StringIO()
+    new_stderr = std_StringIO()
     old_stdout, old_stderr = sys.stdout, sys.stderr
     sys.stdout, sys.stderr = new_stdout, new_stderr
     try:

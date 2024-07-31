@@ -45,6 +45,7 @@ class BatchedPeakListRandomProjection(PeakListRandomProjection):
     large).
     """
 
+    # TODO: change default parameters
     def __init__(self, bin_step=0.5, max_mz=1000., n_hyperplanes=64, subbatch_size=32, seed=3):
         super().__init__(bin_step, max_mz, n_hyperplanes, seed)
         self.subbatch_size = subbatch_size
