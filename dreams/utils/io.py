@@ -1114,8 +1114,8 @@ def savefig(name, path, extension='pdf'):
 
 @contextlib.contextmanager
 def suppress_output():
-    new_stdout = std_StringIO()
-    new_stderr = std_StringIO()
+    new_stdout = std_io.StringIO()
+    new_stderr = std_io.StringIO()
     old_stdout, old_stderr = sys.stdout, sys.stderr
     sys.stdout, sys.stderr = new_stdout, new_stderr
     try:
