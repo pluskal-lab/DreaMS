@@ -29,6 +29,7 @@ from contextlib import contextmanager
 from collections import Counter
 from pathlib import Path
 from scipy.sparse import csr_matrix
+from scipy.spatial.distance import cosine as cos_dist
 import dreams.utils.spectra as su
 import dreams.utils.mols as mu
 import dreams.utils.io as io
@@ -599,7 +600,7 @@ class MSData:
     def __getitem__(self, col):
         return self.get_values(col)
 
-    def at(self, i, plot_mol=False, plot_spec=True, return_spec=False):
+    def at(self, i, plot_mol=True, plot_spec=True, return_spec=False):
         if plot_spec:
             su.plot_spectrum(self.data[SPECTRUM][i])
         if plot_mol:
@@ -963,6 +964,46 @@ class CSRKNN:
         if not directed:
             g.simplify(combine_edges='first')
         return g
+
+
+def condense_dreams_knn(graph, thld, embs, logger):
+    tqdm_logger = io.TqdmToLogger(logger)
+
+    visited = set()
+    clusters = []
+
+    # Sort nodes by degree
+    degrees = graph.degree()
+    vertices = sorted(list(range(graph.vcount())), key=lambda i: degrees[i], reverse=True)
+    
+    for node in tqdm(vertices, desc='Forming clusters', file=tqdm_logger):
+        if node not in visited:
+            current_cluster = [node]
+            visited.add(node)
+            queue = [node]
+            
+            # Perform BFS from `node`
+            while queue:
+                current_node = queue.pop(0)
+
+                in_one_hop = current_node == node
+
+                for neighbor in graph.neighbors(current_node):
+
+                    # Do not revisit nodes
+                    if neighbor in visited:
+                        continue
+                    
+                    # Go over each neighbour with similairty >= thld and add it to a cluster only if it guaranteed to
+                    # transitively have similairty >= thld to cluster representative `node`
+                    if graph.es[graph.get_eid(current_node, neighbor)]['weight'] >= thld:
+                        if in_one_hop or 1 - cos_dist(embs[node], embs[neighbor]) >= thld:
+                            visited.add(neighbor)
+                            queue.append(neighbor)
+                            current_cluster.append(neighbor)
+            
+            clusters.append(current_cluster)
+    return clusters
 
 
 class ManualValidation(ImplExplValidation):
