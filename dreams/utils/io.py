@@ -919,6 +919,8 @@ def merge_lcmsms_hdf5s(
     verbose (bool, optional): Whether to print additional information during the merging. Defaults to True.
     """
 
+    os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'  # Needed to avoid huge file closing bug from h5py
+
     if isinstance(in_pths, Path) and in_pths.is_dir():
         in_pths = in_pths.glob('*.hdf5')
 
