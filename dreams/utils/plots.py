@@ -53,6 +53,8 @@ def rgb_to_hex(r, g, b):
 
 
 def get_palette(cmap='plotly', reversed_order=False, as_hex=False):
+    if cmap == 'nature':
+        return get_nature_hex_colors()
     palette = list(color_generator(12, cmap=cmap))
     if as_hex:
         palette = [rgb_to_hex(int(256 * c[0]), int(256 * c[1]), int(256 * c[2])) for c in palette]
