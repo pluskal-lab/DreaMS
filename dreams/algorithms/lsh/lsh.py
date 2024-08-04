@@ -27,7 +27,7 @@ class RandomProjection:
 
 
 class PeakListRandomProjection:
-    def __init__(self, bin_step=0.5, max_mz=1000., n_hyperplanes=64, seed=3):
+    def __init__(self, bin_step=1, max_mz=1000., n_hyperplanes=50, seed=3):
         assert (max_mz / bin_step) % 1 == 0
         self.bin_step = bin_step
         self.max_mz = max_mz
@@ -46,7 +46,7 @@ class BatchedPeakListRandomProjection(PeakListRandomProjection):
     """
 
     # TODO: change default parameters
-    def __init__(self, bin_step=0.5, max_mz=1000., n_hyperplanes=64, subbatch_size=32, seed=3):
+    def __init__(self, bin_step=1, max_mz=1000., n_hyperplanes=50, subbatch_size=32, seed=3):
         super().__init__(bin_step, max_mz, n_hyperplanes, seed)
         self.subbatch_size = subbatch_size
 
