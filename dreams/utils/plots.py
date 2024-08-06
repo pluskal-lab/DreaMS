@@ -194,7 +194,7 @@ def plot_nx_graph(
     # Determine color scale based on node attribute type
     if node_color_attr:
         unique_attrs = list(set(node_color + special_node_color))
-        if len(unique_attrs) < 10 and all(isinstance(attr, str) for attr in unique_attrs):
+        if any(isinstance(attr, str) for attr in unique_attrs):
             # Treat as categorical data
             color_map = {attr: i for i, attr in enumerate(unique_attrs)}
             node_color = [color_map[attr] for attr in node_color]
