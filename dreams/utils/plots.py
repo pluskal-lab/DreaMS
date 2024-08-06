@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pylab
 import matplotlib as mpl
+import plotly.graph_objects as go
+import networkx as nx
 # import termplotlib as tpl
 from dreams.definitions import FIGURES
 
@@ -95,6 +97,183 @@ def get_nature_hex_colors(extended=True):
 def save_fig(name, dir=FIGURES, dpi=None, transparent=True):
     plt.savefig((dir / name) if dir is not None else name, bbox_inches='tight', pad_inches=0.05, dpi=dpi,
                 transparent=transparent)
+
+
+def plot_nx_graph(
+        G: nx.Graph,
+        special_node: int = None,
+        node_attrs: list = [],
+        pos: dict = None,
+        node_color_attr: str = None,
+        node_size: int = 10,
+        edge_color: str = 'black',
+        edge_width: int = 2,
+        title: str = None
+    ) -> None:
+    """
+    Plots a NetworkX graph using Plotly, with options to customize node attributes and highlight a special node.
+
+    Args:
+    - G (nx.Graph): The NetworkX graph to be plotted.
+    - node_attrs (list): List of node attributes to be displayed in hover text.
+    - pos (dict): Dictionary specifying the positions of nodes. If None, a spring layout will be computed.
+    - node_color_attr (str): Node attribute used to determine node colors.
+    - node_size (int): Size of the nodes.
+    - edge_color (str): Color of the edges.
+    - edge_width (int): Width of the edges.
+    - title (str): Title of the plot.
+    - special_node (int): Node to be highlighted with a different symbol and larger size.
+    """
+
+    # Compute positions if not provided
+    if pos is None:
+        pos = nx.spring_layout(G)
+
+    # Prepare edge data for plotting
+    edge_x = []
+    edge_y = []
+    edge_annotations = []
+    for edge in G.edges(data=True):
+        x0, y0 = pos[edge[0]]
+        x1, y1 = pos[edge[1]]
+        edge_x.extend([x0, x1, None])
+        edge_y.extend([y0, y1, None])
+        weight = edge[2].get('weight', '')
+        if weight != '':
+            weight = f'{weight:.2f}'
+        edge_mid_x = (x0 + x1) / 2
+        edge_mid_y = (y0 + y1) / 2
+        edge_annotations.append(
+            dict(
+                x=edge_mid_x, y=edge_mid_y,
+                text=str(weight),
+                showarrow=False,
+                font=dict(color='black'),
+                align='center'
+            )
+        )
+
+    # Create edge trace
+    edge_trace = go.Scatter(
+        x=edge_x, y=edge_y,
+        line=dict(width=edge_width, color=edge_color),
+        hoverinfo='none',
+        mode='lines')
+
+    # Prepare node data for plotting
+    node_x = []
+    node_y = []
+    node_text = []
+    node_color = []
+    special_node_x = []
+    special_node_y = []
+    special_node_text = []
+    special_node_color = []
+
+    for node in G.nodes(data=True):
+        x, y = pos[node[0]]
+        if node[0] == special_node:
+            special_node_x.append(x)
+            special_node_y.append(y)
+            special_node_color.append(node[1].get(node_color_attr, '') if node_color_attr else None)
+            text = f'Node: {node[0]}'
+            for attr in node_attrs:
+                if attr in node[1]:
+                    text += f'<br>{attr}: {node[1].get(attr, "")}'
+            special_node_text.append(text)
+        else:
+            node_x.append(x)
+            node_y.append(y)
+            node_color.append(node[1].get(node_color_attr, '') if node_color_attr else None)
+            text = f'Node: {node[0]}'
+            for attr in node_attrs:
+                if attr in node[1]:
+                    text += f'<br>{attr}: {node[1].get(attr, "")}'
+            node_text.append(text)
+
+    # Determine color scale based on node attribute type
+    if node_color_attr:
+        unique_attrs = list(set(node_color + special_node_color))
+        if len(unique_attrs) < 10 and all(isinstance(attr, str) for attr in unique_attrs):
+            # Treat as categorical data
+            color_map = {attr: i for i, attr in enumerate(unique_attrs)}
+            node_color = [color_map[attr] for attr in node_color]
+            special_node_color = [color_map[attr] for attr in special_node_color]
+            # Use seaborn palette for colors
+            palette = sns.color_palette("Set2", len(unique_attrs))
+            colors = [f'rgba({int(r*255)},{int(g*255)},{int(b*255)},1)' for r, g, b in palette]
+            color_scale = [[i / (len(colors) - 1), color] for i, color in enumerate(colors)]
+            showscale = True
+            colorbar = dict(
+                thickness=15,
+                title=node_color_attr,
+                xanchor='left',
+                titleside='right',
+                tickvals=list(color_map.values()),
+                ticktext=list(color_map.keys())
+            )
+        else:
+            # Treat as numerical data
+            node_color = np.array(node_color, dtype=float)
+            special_node_color = np.array(special_node_color, dtype=float)
+            color_scale = 'Viridis'
+            showscale = True
+            colorbar = dict(
+                thickness=15,
+                title=node_color_attr,
+                xanchor='left',
+                titleside='right'
+            )
+    else:
+        color_scale = 'Rainbow'
+        node_color = None
+        special_node_color = None
+        showscale = False
+        colorbar = None
+
+    # Create trace for regular nodes
+    node_trace = go.Scatter(
+        x=node_x, y=node_y,
+        mode='markers',
+        hoverinfo='text',
+        text=node_text,
+        marker=dict(
+            showscale=showscale,
+            colorscale=color_scale,
+            color=node_color,
+            size=node_size,
+            colorbar=colorbar,
+            line_width=2))
+
+    # Create trace for the special node
+    special_node_trace = go.Scatter(
+        x=special_node_x, y=special_node_y,
+        mode='markers',
+        hoverinfo='text',
+        text=special_node_text,
+        marker=dict(
+            showscale=False,  # Colorbar is shown only on the main node trace
+            colorscale=color_scale,
+            color=special_node_color,
+            size=node_size * 1.5,  # Make the special node 150% larger
+            symbol='star',
+            line_width=2))
+
+    # Create figure and layout
+    fig = go.Figure(data=[edge_trace, node_trace, special_node_trace],
+                    layout=go.Layout(
+                        title=title,
+                        titlefont_size=16,
+                        showlegend=False,
+                        hovermode='closest',
+                        margin=dict(b=20, l=5, r=5, t=40),
+                        annotations=edge_annotations,
+                        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False))
+                    )
+
+    # Display the figure
+    fig.show()
 
 
 def distr_density(values,
