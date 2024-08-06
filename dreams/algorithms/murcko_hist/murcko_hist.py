@@ -1,7 +1,9 @@
 import numpy as np
 import rdkit.Chem.Scaffolds.MurckoScaffold as MurckoScaffold
 from rdkit import Chem
+from rdkit.Chem.rdchem import Mol
 from collections import Counter
+
 
 # TODO: docstrings
 
@@ -31,35 +33,31 @@ def multirings(mol):
 
     return rings_atoms
 
-
-def break_rings(mol, rings_size=3):
+def break_rings(mol: Mol, rings_size=3):
     """
     Breaks all `rings_size`-membered rings in a molecule by removing a bond with minimal degree wrt rings. It is
     supposed to be used prior to computing Murcko scaffolds.
     NOTE: it is not tested and is probably not useful for rings_size != 3.
     """
 
-    br = [set(r) for r in mol.GetRingInfo().BondRings()]
-
-    for ring in br:
-        if len(ring) != rings_size:
-            continue
-
-        ring = list(ring)
-        bond_rings_degrees = []
-        for bond in ring:
-            bond_rings_degrees.append(sum([bond in r for r in br]))
-        bond_to_remove = mol.GetBonds()[ring[np.argmin(bond_rings_degrees)]]
-
+    def get_ring(mol, size) -> list[int] | None:
+        for ring in mol.GetRingInfo().BondRings():
+            if len(ring) == size:
+                return list(set(ring))
+    while (ring := get_ring(mol, size=rings_size)) is not None:
+        bonds = mol.GetRingInfo().BondRings()
+        degrees = [sum([atom in bond for bond in bonds]) 
+                    for atom in ring]
+        least_bond = np.argmin(degrees)
+        atom = ring[least_bond]
+        remove_bond = mol.GetBonds()[atom]
         emol = Chem.EditableMol(mol)
-        emol.RemoveBond(bond_to_remove.GetBeginAtomIdx(), bond_to_remove.GetEndAtomIdx())
+        emol.RemoveBond(remove_bond.GetBeginAtomIdx(), remove_bond.GetEndAtomIdx())
         mol = emol.GetMol()
         mol.ClearComputedProps()
         mol.UpdatePropertyCache()
         Chem.GetSymmSSSR(mol)
-
     return mol
-
 
 def murcko_hist(mol, as_dict=True, show_mol_scaffold=False, no_residue_atom_as_linker=True,
                 break_three_membered_rings=True):
