@@ -101,8 +101,9 @@ def save_fig(name, dir=FIGURES, dpi=None, transparent=True):
 
 def plot_nx_graph(
         G: nx.Graph,
-        special_node: int = None,
         node_attrs: list = [],
+        special_node: int = None,
+        special_nodes: list = [],
         pos: dict = None,
         node_color_attr: str = None,
         node_size: int = 10,
@@ -111,18 +112,19 @@ def plot_nx_graph(
         title: str = None
     ) -> None:
     """
-    Plots a NetworkX graph using Plotly, with options to customize node attributes and highlight a special node.
+    Plots a NetworkX graph using Plotly, with options to customize node attributes and highlight special nodes.
 
     Args:
     - G (nx.Graph): The NetworkX graph to be plotted.
     - node_attrs (list): List of node attributes to be displayed in hover text.
+    - special_node (int): Node to be highlighted with a star symbol and larger size.
+    - special_nodes (list): List of nodes to be highlighted with a triangle symbol.
     - pos (dict): Dictionary specifying the positions of nodes. If None, a spring layout will be computed.
     - node_color_attr (str): Node attribute used to determine node colors.
     - node_size (int): Size of the nodes.
     - edge_color (str): Color of the edges.
     - edge_width (int): Width of the edges.
     - title (str): Title of the plot.
-    - special_node (int): Node to be highlighted with a different symbol and larger size.
     """
 
     # Compute positions if not provided
@@ -169,6 +171,10 @@ def plot_nx_graph(
     special_node_y = []
     special_node_text = []
     special_node_color = []
+    triangle_node_x = []
+    triangle_node_y = []
+    triangle_node_text = []
+    triangle_node_color = []
 
     for node in G.nodes(data=True):
         x, y = pos[node[0]]
@@ -181,6 +187,15 @@ def plot_nx_graph(
                 if attr in node[1]:
                     text += f'<br>{attr}: {node[1].get(attr, "")}'
             special_node_text.append(text)
+        elif node[0] in special_nodes:
+            triangle_node_x.append(x)
+            triangle_node_y.append(y)
+            triangle_node_color.append(node[1].get(node_color_attr, '') if node_color_attr else None)
+            text = f'Node: {node[0]}'
+            for attr in node_attrs:
+                if attr in node[1]:
+                    text += f'<br>{attr}: {node[1].get(attr, "")}'
+            triangle_node_text.append(text)
         else:
             node_x.append(x)
             node_y.append(y)
@@ -193,12 +208,13 @@ def plot_nx_graph(
 
     # Determine color scale based on node attribute type
     if node_color_attr:
-        unique_attrs = list(set(node_color + special_node_color))
-        if any(isinstance(attr, str) for attr in unique_attrs):
+        unique_attrs = list(set(node_color + special_node_color + triangle_node_color))
+        if len(unique_attrs) < 10 and all(isinstance(attr, str) for attr in unique_attrs):
             # Treat as categorical data
             color_map = {attr: i for i, attr in enumerate(unique_attrs)}
             node_color = [color_map[attr] for attr in node_color]
             special_node_color = [color_map[attr] for attr in special_node_color]
+            triangle_node_color = [color_map[attr] for attr in triangle_node_color]
             # Use seaborn palette for colors
             palette = sns.color_palette("Set2", len(unique_attrs))
             colors = [f'rgba({int(r*255)},{int(g*255)},{int(b*255)},1)' for r, g, b in palette]
@@ -216,6 +232,7 @@ def plot_nx_graph(
             # Treat as numerical data
             node_color = np.array(node_color, dtype=float)
             special_node_color = np.array(special_node_color, dtype=float)
+            triangle_node_color = np.array(triangle_node_color, dtype=float)
             color_scale = 'Viridis'
             showscale = True
             colorbar = dict(
@@ -228,6 +245,7 @@ def plot_nx_graph(
         color_scale = 'Rainbow'
         node_color = None
         special_node_color = None
+        triangle_node_color = None
         showscale = False
         colorbar = None
 
@@ -245,7 +263,7 @@ def plot_nx_graph(
             colorbar=colorbar,
             line_width=2))
 
-    # Create trace for the special node
+    # Create trace for the special node (star)
     special_node_trace = go.Scatter(
         x=special_node_x, y=special_node_y,
         mode='markers',
@@ -259,8 +277,22 @@ def plot_nx_graph(
             symbol='star',
             line_width=2))
 
+    # Create trace for special nodes (triangles)
+    triangle_node_trace = go.Scatter(
+        x=triangle_node_x, y=triangle_node_y,
+        mode='markers',
+        hoverinfo='text',
+        text=triangle_node_text,
+        marker=dict(
+            showscale=False,  # Colorbar is shown only on the main node trace
+            colorscale=color_scale,
+            color=triangle_node_color,
+            size=node_size,
+            symbol='square',
+            line_width=2))
+
     # Create figure and layout
-    fig = go.Figure(data=[edge_trace, node_trace, special_node_trace],
+    fig = go.Figure(data=[edge_trace, node_trace, special_node_trace, triangle_node_trace],
                     layout=go.Layout(
                         title=title,
                         titlefont_size=16,
