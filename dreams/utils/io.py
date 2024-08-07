@@ -1238,6 +1238,12 @@ class DatasetAccessor:
         self.parent = parent
         self.dataset_name = dataset_name
 
+    @property
+    def shape(self):
+        """Return the shape of the dataset."""
+        first_shape = self.parent.files[0][self.dataset_name].shape
+        return (self.parent.total_length,) + first_shape[1:]
+
     def __getitem__(self, index):
         if isinstance(index, slice):
             start, stop, step = index.indices(self.parent.total_length)
