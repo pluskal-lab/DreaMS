@@ -499,8 +499,30 @@ class MSnSpectrum:
         pass
 
 
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+import matplotlib.cm as cm
+import matplotlib.ticker as ticker
+
 def plot_spectrum(spec, hue=None, xlim=None, ylim=None, mirror_spec=None, highl_idx=None, high_peaks_at=None,
-                  figsize=(6, 2), colors=None, save_pth=None):
+                  figsize=(6, 2), colors=None, save_pth=None, prec_mz=None, mirror_prec_mz=None):
+    """
+    Plots a mass spectrum with optional mirror spectrum and highlighted peaks.
+
+    Args:
+    - spec: The spectrum to be plotted.
+    - hue: Optional values to color the peaks.
+    - xlim: X-axis limits.
+    - ylim: Y-axis limits.
+    - mirror_spec: Optional mirror spectrum to be plotted.
+    - highl_idx: Indices of peaks to be highlighted.
+    - high_peaks_at: M/z values of peaks to be highlighted.
+    - figsize: Figure size.
+    - colors: Colors for the plot.
+    - save_pth: Path to save the plot.
+    - prec_mz: Precursor m/z value to display.
+    - mirror_prec_mz: Precursor m/z value of the mirror spectrum to display.
+    """
 
     if colors == 'nature':
         colors = get_nature_hex_colors()
@@ -565,6 +587,14 @@ def plot_spectrum(spec, hue=None, xlim=None, ylim=None, mirror_spec=None, highl_
         plt.ylim(ylim[0], ylim[1])
     plt.xlabel('m/z')
     plt.ylabel('Intensity [%]')
+
+    # Add precursor m/z annotations
+    if prec_mz is not None:
+        ax.text(0.05, 0.95, f'Precursor m/z: {prec_mz:.2f}', transform=ax.transAxes,
+                fontsize=10, verticalalignment='top', horizontalalignment='left', bbox=dict(facecolor='white', alpha=0.4))
+    if mirror_prec_mz is not None:
+        ax.text(0.05, 0.05, f'Precursor m/z: {mirror_prec_mz:.2f}', transform=ax.transAxes,
+                fontsize=10, verticalalignment='bottom', horizontalalignment='left', bbox=dict(facecolor='white', alpha=0.4))
 
     if save_pth is not None:
         save_fig(save_pth)
