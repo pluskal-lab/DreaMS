@@ -1214,6 +1214,10 @@ class ChunkedHDF5File:
         self.dataset_lengths = [f[self.datasets[0]].shape[0] for f in self.files]
         self.total_length = sum(self.dataset_lengths)
 
+    def keys(self):
+        """Return a list of dataset names."""
+        return self.datasets
+
     def __del__(self):
         """Ensure all files are properly closed when the object is deleted."""
         for f in self.files:
@@ -1231,9 +1235,9 @@ class ChunkedHDF5File:
         """
         if key not in self.datasets:
             raise ValueError(f"Dataset {key} not found in the files.")
-        return DatasetAccessor(self, key)
+        return ChunkedDatasetAccessor(self, key)
 
-class DatasetAccessor:
+class ChunkedDatasetAccessor:
     def __init__(self, parent, dataset_name):
         self.parent = parent
         self.dataset_name = dataset_name
