@@ -1196,3 +1196,96 @@ def compress_hdf(hdf_pth, out_pth=None, compression='gzip', compression_opts=4):
                     k, data=f[k][:], shape=f[k].shape, dtype=f[k].dtype,
                     compression=compression, compression_opts=compression_opts
                 )
+
+
+class ChunkedHDF5File:
+    def __init__(self, file_paths):
+        """
+        Initialize the ChunkedHDF5File with a list of HDF5 file paths.
+
+        Args:
+        - file_paths (list of Path): Paths to the HDF5 files.
+        """
+        self.file_paths = sorted(file_paths)
+        self.files = [h5py.File(p, 'r') for p in self.file_paths]
+        self.datasets = list(self.files[0].keys())
+
+        # Assume all datasets have the same length along the first dimension
+        self.dataset_lengths = [f[self.datasets[0]].shape[0] for f in self.files]
+        self.total_length = sum(self.dataset_lengths)
+
+    def __del__(self):
+        """Ensure all files are properly closed when the object is deleted."""
+        for f in self.files:
+            f.close()
+
+    def __getitem__(self, key):
+        """
+        Allows for standard indexing notation to access datasets and their elements.
+
+        Args:
+        - key (str): The name of the dataset.
+
+        Returns:
+        - An object to access elements of the specified dataset.
+        """
+        if key not in self.datasets:
+            raise ValueError(f"Dataset {key} not found in the files.")
+        return DatasetAccessor(self, key)
+
+class DatasetAccessor:
+    def __init__(self, parent, dataset_name):
+        self.parent = parent
+        self.dataset_name = dataset_name
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            start, stop, step = index.indices(self.parent.total_length)
+            if step != 1:
+                raise ValueError("Step size other than 1 is not supported.")
+            return self._get_slice(start, stop)
+        elif isinstance(index, int):
+            if index < 0:
+                index += self.parent.total_length
+            return self._get_element(index)
+        else:
+            raise TypeError("Invalid argument type.")
+
+    def _get_element(self, index):
+        """Get a specific element from the dataset by index."""
+        if index < 0 or index >= self.parent.total_length:
+            raise IndexError(f"Index {index} is out of bounds for dataset with length {self.parent.total_length}.")
+
+        cumulative_length = 0
+        for i, length in enumerate(self.parent.dataset_lengths):
+            if cumulative_length + length > index:
+                chunk_index = i
+                internal_index = index - cumulative_length
+                break
+            cumulative_length += length
+
+        return self.parent.files[chunk_index][self.dataset_name][internal_index]
+
+    def _get_slice(self, start, stop):
+        """Get a slice of the dataset."""
+        if start < 0 or stop > self.parent.total_length or start >= stop:
+            raise IndexError(f"Invalid slice range [{start}:{stop}] for dataset with length {self.parent.total_length}.")
+
+        result = []
+        cumulative_length = 0
+        for i, length in enumerate(self.parent.dataset_lengths):
+            if cumulative_length + length > start:
+                chunk_index = i
+                internal_start = start - cumulative_length
+                while start < stop:
+                    if chunk_index >= len(self.parent.files):
+                        break
+                    chunk_end = min(stop - start, self.parent.dataset_lengths[chunk_index] - internal_start)
+                    result.append(self.parent.files[chunk_index][self.dataset_name][internal_start:internal_start + chunk_end])
+                    start += chunk_end
+                    chunk_index += 1
+                    internal_start = 0
+                break
+            cumulative_length += length
+
+        return np.concatenate(result)
