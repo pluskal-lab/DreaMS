@@ -182,7 +182,7 @@ def plot_nx_graph(
             special_node_x.append(x)
             special_node_y.append(y)
             special_node_color.append(node[1].get(node_color_attr, '') if node_color_attr else None)
-            text = f'Node: {node[0]}'
+            text = f'node: {node[0]}'
             for attr in node_attrs:
                 if attr in node[1]:
                     text += f'<br>{attr}: {node[1].get(attr, "")}'
