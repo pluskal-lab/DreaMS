@@ -600,16 +600,23 @@ class MSData:
     def __getitem__(self, col):
         return self.get_values(col)
 
-    def at(self, i, plot_mol=True, plot_spec=True, return_spec=False, vals=None):
+    def at(self, i, plot_mol=True, plot_spec=True, return_spec=False, vals=None, unpad_spec=True):
         if plot_spec:
             su.plot_spectrum(self.data[SPECTRUM][i])
         if plot_mol:
             if SMILES not in self.columns():
                 raise ValueError('Molecule information is not present in the dataset.')
             display(Chem.MolFromSmiles(self.data[SMILES][i]))
-        res = {k: self.data[k][i] for k in self.columns() if (vals is not None and k in vals)}
+        def process_val(v):
+            if isinstance(v, bytes):
+                return v.decode('utf-8')
+            return v
+        res = {k: process_val(self.data[k][i]) for k in self.columns() if (vals is None or k in vals)}
         if not return_spec:
             del res[SPECTRUM]
+        elif unpad_spec:
+            res[SPECTRUM] = su.unpad_peak_list(res[SPECTRUM])
+
         return res
 
     def get_spectra(self, idx=None):
