@@ -416,16 +416,19 @@ def load_hdf5_in_mem(dct):
 
 
 class MSData:
-    def __init__(self, hdf5_pth: Union[Path, str], in_mem=False, mode='r', spec_col=SPECTRUM, prec_mz_col=PRECURSOR_MZ):
-        self.hdf5_pth = Path(hdf5_pth)
-        self.f = h5py.File(hdf5_pth, mode)
+    def __init__(self, hdf5_pth: Union[Path, str, List[Path]], in_mem=False, mode='r', spec_col=SPECTRUM, prec_mz_col=PRECURSOR_MZ):
+        if isinstance(hdf5_pth, list):
+            self.f = io.ChunkedHDF5File(hdf5_pth)
+        else:
+            self.hdf5_pth = Path(hdf5_pth)
+            self.f = h5py.File(hdf5_pth, mode)
 
         for k in [spec_col, prec_mz_col]:
             if k not in self.f.keys():
                 raise ValueError(f'Column "{k}" is not present in the dataset {hdf5_pth}.')
 
-        if self.f[spec_col].shape[1] != 2 or len(self.f[spec_col].shape) != 3:
-            raise ValueError('Shape of spectra has to be (num_spectra, 2 (m/z, intensity), num_peaks).')
+        # if self.f[spec_col].shape[1] != 2 or len(self.f[spec_col].shape) != 3:
+        #     raise ValueError('Shape of spectra has to be (num_spectra, 2 (m/z, intensity), num_peaks).')
 
         num_spectra = set()
         for k in self.f.keys():
@@ -465,8 +468,12 @@ class MSData:
         return data
 
     @staticmethod
-    def from_hdf5(pth: Path, in_mem=False, **kwargs):
-        return MSData(pth, in_mem=in_mem, **kwargs)
+    def from_hdf5(pth: Path, **kwargs):
+        return MSData(pth, **kwargs)
+
+    @staticmethod
+    def from_hdf5_chunks(pths: List[Path], **kwargs):
+        return MSData(pths, **kwargs)
 
     @staticmethod
     def from_pandas(
@@ -602,10 +609,8 @@ class MSData:
 
     def at(self, i, plot_mol=True, plot_spec=True, return_spec=False, vals=None, unpad_spec=True):
         if plot_spec:
-            su.plot_spectrum(self.data[SPECTRUM][i])
-        if plot_mol:
-            if SMILES not in self.columns():
-                raise ValueError('Molecule information is not present in the dataset.')
+            su.plot_spectrum(self.data[SPECTRUM][i], prec_mz=self.data[PRECURSOR_MZ][i])
+        if plot_mol and SMILES in self.columns():
             display(Chem.MolFromSmiles(self.data[SMILES][i]))
         def process_val(v):
             if isinstance(v, bytes):
