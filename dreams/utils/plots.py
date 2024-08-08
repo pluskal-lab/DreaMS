@@ -8,7 +8,8 @@ import pylab
 import matplotlib as mpl
 import plotly.graph_objects as go
 import networkx as nx
-# import termplotlib as tpl
+import typing as T
+from pathlib import Path
 from dreams.definitions import FIGURES
 
 
@@ -109,7 +110,8 @@ def plot_nx_graph(
         node_size: int = 10,
         edge_color: str = 'black',
         edge_width: int = 2,
-        title: str = None
+        title: str = None,
+        html_pth: T.Union[Path, str] = None
     ) -> None:
     """
     Plots a NetworkX graph using Plotly, with options to customize node attributes and highlight special nodes.
@@ -303,6 +305,10 @@ def plot_nx_graph(
                         xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
                         yaxis=dict(showgrid=False, zeroline=False, showticklabels=False))
                     )
+
+    # Save the figure as HTML
+    if html_pth is not None:
+        fig.write_html(html_pth)
 
     # Display the figure
     fig.show()
