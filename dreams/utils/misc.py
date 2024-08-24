@@ -6,6 +6,21 @@ import pandas as pd
 import plotly.graph_objects as go
 from collections import Counter
 from typing import Sequence
+from huggingface_hub import hf_hub_download
+
+
+def gems_hf_download(file_pth: str) -> str:
+    """
+    Download a file from the Hugging Face Hub and return its location on disk.
+    
+    Args:
+        file_pth (str): Name of the file to download.
+    """
+    return hf_hub_download(
+        repo_id="roman-bushuiev/GeMS",
+        filename="data/" + file_pth,
+        repo_type="dataset",
+    )
 
 
 def is_float(s):
