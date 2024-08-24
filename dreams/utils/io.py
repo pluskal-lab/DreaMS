@@ -1218,10 +1218,14 @@ class ChunkedHDF5File:
         """Return a list of dataset names."""
         return self.datasets
 
-    def __del__(self):
-        """Ensure all files are properly closed when the object is deleted."""
+    def close(self):
+        """Close all files."""
         for f in self.files:
             f.close()
+
+    def __del__(self):
+        """Ensure all files are properly closed when the object is deleted."""
+        self.close()
 
     def __getitem__(self, key):
         """
@@ -1254,7 +1258,7 @@ class ChunkedDatasetAccessor:
             if step != 1:
                 raise ValueError("Step size other than 1 is not supported.")
             return self._get_slice(start, stop)
-        elif isinstance(index, int):
+        elif isinstance(index, int) or isinstance(index, np.integer):
             if index < 0:
                 index += self.parent.total_length
             return self._get_element(index)
