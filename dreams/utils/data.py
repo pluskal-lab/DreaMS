@@ -8,6 +8,7 @@ import torch
 from torch import nn
 import random
 import igraph
+import networkx as nx
 import scipy
 import spectral_entropy
 import plotly.graph_objects as go
@@ -617,10 +618,12 @@ class MSData:
                 return v.decode('utf-8')
             return v
         res = {k: process_val(self.data[k][i]) for k in self.columns() if (vals is None or k in vals)}
-        if not return_spec:
-            del res[SPECTRUM]
-        elif unpad_spec:
-            res[SPECTRUM] = su.unpad_peak_list(res[SPECTRUM])
+
+        if SPECTRUM in res:
+            if not return_spec:
+                del res[SPECTRUM]
+            elif unpad_spec:
+                res[SPECTRUM] = su.unpad_peak_list(res[SPECTRUM])
 
         return res
 
@@ -958,24 +961,46 @@ class CSRKNN:
             one_minus_weights=one_minus_weights
         )
 
-    def to_igraph(self, directed=True) -> igraph.Graph:
+    def to_graph(self, directed=True, graph_class="igraph"):
         """
-        Convert CSR matrix to igraph.Graph object.
-        TODO: Construction of edges can be done purely in numpy.
+        Convert CSR matrix to a graph object using the specified library.
+        
+        Parameters:
+        - directed (bool): If True, creates a directed graph. If False, creates an undirected graph.
+        - graph_class (str): Specifies which graph library to use. 
+                            "igraph" for igraph.Graph, "networkx" for networkx.Graph.
+        
+        Returns:
+        - Graph object: igraph.Graph or networkx.Graph based on the specified `graph_class`.
         """
-        g = igraph.Graph(directed=directed)
-        g.add_vertices(self.n_nodes)
+
         s, t, w = [], [], []
-        for i in tqdm(range(self.n_nodes), desc='Constructing graph edges'):
+        for i in tqdm(range(self.n_nodes), desc='Retrieving graph edges'):
             nns, sims = self.neighbors(i, sort=False)
             s.extend([i] * len(nns))
             t.extend(nns)
             w.extend(sims)
-        g.add_edges(list(zip(s, t)))
-        g.es['weight'] = w
-        if not directed:
-            g.simplify(combine_edges='first')
-        return g
+
+        if graph_class == "igraph":
+            g = igraph.Graph(directed=directed)
+            g.add_vertices(self.n_nodes)
+            g.add_edges(list(zip(s, t)))
+            g.es['weight'] = w
+            if not directed:
+                g.simplify(combine_edges='first')
+            return g
+
+        elif graph_class == "networkx":
+            if directed:
+                g = nx.DiGraph()
+            else:
+                g = nx.Graph()
+            g.add_weighted_edges_from(zip(s, t, w))
+
+            return g
+
+        else:
+            raise ValueError(f"Unknown graph_class: {graph_class}. Use 'igraph' or 'networkx'.")
 
 
 def condense_dreams_knn(graph, thld, embs, logger):
