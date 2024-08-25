@@ -220,7 +220,10 @@ def plot_nx_graph(
             # Use seaborn palette for colors
             palette = sns.color_palette("Set2", len(unique_attrs))
             colors = [f'rgba({int(r*255)},{int(g*255)},{int(b*255)},1)' for r, g, b in palette]
-            color_scale = [[i / (len(colors) - 1), color] for i, color in enumerate(colors)]
+            if len(colors) == 1:
+                color_scale = [[0, colors[0]]]
+            else:
+                color_scale = [[i / (len(colors) - 1), color] for i, color in enumerate(colors)]
             showscale = True
             colorbar = dict(
                 thickness=15,
