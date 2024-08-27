@@ -3,10 +3,55 @@ import numpy as np
 import heapq
 import torch
 import pandas as pd
+import networkx as nx
 import plotly.graph_objects as go
 from collections import Counter
 from typing import Sequence
 from huggingface_hub import hf_hub_download
+
+
+def networkx_to_dataframe(G: nx.Graph) -> pd.DataFrame:
+    # Initialize a list to store the data for each node
+    data = []
+    
+    # Gather all node and edge attribute keys
+    node_attr_keys = set()
+    edge_attr_keys = set()
+    
+    for node, attrs in G.nodes(data=True):
+        node_attr_keys.update(attrs.keys())
+        
+    for u, v, attrs in G.edges(data=True):
+        edge_attr_keys.update(attrs.keys())
+
+    # Iterate over all nodes in the graph
+    for node in G.nodes(data=True):
+        node_id = node[0]
+        node_attrs = node[1]  # Node attributes
+        
+        # Initialize node data with default values (None for missing attributes)
+        node_data = {'node_id': node_id}
+        for key in node_attr_keys:
+            node_data[key] = node_attrs.get(key, None)
+        
+        # Get neighbors
+        neighbors = list(G.neighbors(node_id))
+        node_data['neighbors'] = neighbors
+        
+        # Get edge attributes for each neighbor
+        for key in edge_attr_keys:
+            node_data[f'edge_{key}'] = [
+                G.get_edge_data(node_id, neighbor).get(key, None)
+                for neighbor in neighbors
+            ]
+        
+        # Append the dictionary to the data list
+        data.append(node_data)
+    
+    # Create a DataFrame from the data list
+    df = pd.DataFrame(data)
+    
+    return df
 
 
 def gems_hf_download(file_pth: str) -> str:
