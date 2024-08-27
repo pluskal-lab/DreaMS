@@ -131,7 +131,10 @@ def plot_nx_graph(
 
     # Compute positions if not provided
     if pos is None:
-        pos = nx.spring_layout(G)
+        if isinstance(G, nx.DiGraph):
+            pos = nx.kamada_kawai_layout(G.to_undirected())
+        else:
+            pos = nx.kamada_kawai_layout(G)
 
     # Prepare edge data for plotting
     edge_x = []
