@@ -30,9 +30,9 @@ The resulting `dreams_embeddings` object is a matrix with 5 rows and 1024 column
 ## Work in progress
 - [ ] Wrap the repository into a pip package.
 - [ ] Import utilities to [matchms](https://github.com/matchms/matchms).
-- [ ] DreaMS Atlas exploration demo.
+- [x] DreaMS Atlas exploration demo.
 - [ ] Upload weights of all models.
-- [ ] Provide scripts to collect/download GeMS datasets.
+- [x] Provide scripts to collect/download GeMS datasets.
 - [ ] Extend `dreams.api` with more functionality (e.g. attention heads analysis).
-- [ ] Add tutorial notebooks.
+- [x] Add tutorial notebooks.
 - [ ] Upload Murcko splits and detailed tutorial notebook.
