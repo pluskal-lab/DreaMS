@@ -24,8 +24,16 @@ class PreTrainedModel:
 
     @classmethod
     def from_ckpt(cls, ckpt_path: Path, ckpt_cls: T.Union[T.Type[DreaMSModel], T.Type[FineTuningHead]], n_highest_peaks: int):
-        return cls(
-            ckpt_cls.load_from_checkpoint(
+        if ckpt_cls == DreaMSModel:
+            return cls(
+                ckpt_cls.load_from_checkpoint(
+                    ckpt_path,
+                    map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                )
+            )
+        else:
+            return cls(
+                ckpt_cls.load_from_checkpoint(
                 ckpt_path,
                 backbone_pth=PRETRAINED / 'ssl_model.ckpt',
                 map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -62,7 +70,7 @@ class PreTrainedModel:
         return ['Fluorine probability', 'Molecular properties', DREAMS_EMBEDDING]
 
 
-def compute_dreams_predictions(
+def dreams_predictions(
         model_ckpt: T.Union[PreTrainedModel, FineTuningHead, DreaMSModel, Path, str], spectra: T.Union[Path, str],
         model_cls=None, batch_size=32, tqdm_batches=True, write_log=False, n_highest_peaks=None, title='',
         **msdata_kwargs
@@ -126,99 +134,144 @@ def compute_dreams_predictions(
 
     preds = preds.squeeze().cpu().numpy()
 
-    # TODO: move to outer scope
-    # msdata.add_column(title, preds)
     return preds
 
 
-def compute_dreams_embeddings(pth, batch_size=32, tqdm_batches=True, write_log=False, **msdata_kwargs):
-    return compute_dreams_predictions(
+def dreams_embeddings(pth, batch_size=32, tqdm_batches=True, write_log=False, **msdata_kwargs):
+    return dreams_predictions(
         DREAMS_EMBEDDING, pth, batch_size=batch_size, tqdm_batches=tqdm_batches, write_log=write_log, **msdata_kwargs
     )
 
 
-def generate_all_dreams_predictions(pth: T.Union[Path, str], batch_size=32, tqdm_batches=True,
-                                 spec_col='PARSED PEAKS', prec_mz_col='PRECURSOR M/Z'):
+def dreams_intermediates(model: T.Union[Path, str, PreTrainedModel], msdata: T.Union[Path, str], 
+                          layers_idx=None, precursor_only=True, batch_size=32, tqdm_batches=True, 
+                          spec_col=SPECTRUM, prec_mz_col=PRECURSOR_MZ, n_highest_peaks=60, 
+                          attention_matrices=False, spec_preproc: du.SpectrumPreprocessor = None):
 
-    if isinstance(pth, str):
-        pth = Path(pth)
+    # Load model if not already a PreTrainedModel instance
+    if not isinstance(model, PreTrainedModel):
+        model = PreTrainedModel.from_ckpt(model, DreaMSModel, n_highest_peaks)
 
-    out_pth = io.append_to_stem(pth, 'DreaMS').with_suffix('.hdf5')
+    # Prepare data
+    if not isinstance(msdata, du.MSData):
+        msdata = du.MSData.load(msdata, spec_col=spec_col, prec_mz_col=prec_mz_col)
 
-    with h5py.File(out_pth, 'w') as f:
-        for m in PreTrainedModel.available_models():
-            preds = compute_dreams_predictions(m, pth, batch_size=batch_size, tqdm_batches=tqdm_batches,
-                                           spec_col=spec_col, prec_mz_col=prec_mz_col)
-            preds = preds.squeeze().cpu().numpy()
+    # Initialize spectrum preprocessing
+    spec_preproc = spec_preproc or du.SpectrumPreprocessor(
+        dformat=dformats.DataFormatA(),
+        n_highest_peaks=n_highest_peaks
+    )
 
-            if m == 'Molecular properties':
-                for i, p in enumerate(mu.MolPropertyCalculator().prop_names):
-                    f.create_dataset(p, data=preds[:, i])
-            else:
-                f.create_dataset(m, data=preds)
+    # Prepare torch data loader
+    msdata = msdata.to_torch_dataset(spec_preproc)
+    dataloader = DataLoader(msdata, batch_size=batch_size, shuffle=False, drop_last=False)
+
+    # Determine layers to extract embeddings from
+    if not layers_idx:
+        layers_idx = [model.model.n_layers - 1]
+
+    # Prepare hooks for extracting embeddings and attention matrices
+    embeddings = {i: [] for i in layers_idx}
+    attn_matrices = {i: [] for i in layers_idx} if attention_matrices else None
+
+    def get_embeddings_hook(layer_idx):
+        def hook(module, input, output):
+            embs = output.detach()
+            if precursor_only:
+                embs = embs[:, 0, :]
+            embeddings[layer_idx].append(embs)
+        return hook
+
+    def get_attn_scores_hook(layer_idx):
+        def hook(module, input, output):
+            attn_matrices[layer_idx].append(output[1].detach())
+        return hook
+
+    # Register hooks
+    hooks = []
+    for i in layers_idx:
+        hooks.append(model.model.transformer_encoder.ffs[i].register_forward_hook(get_embeddings_hook(i)))
+        if attention_matrices:
+            hooks.append(model.model.transformer_encoder.atts[i].register_forward_hook(get_attn_scores_hook(i)))
+
+    # Perform forward passes
+    progress_bar = tqdm(
+        total=len(msdata),
+        desc='Computing DreaMS representations',
+        disable=not tqdm_batches
+    )
+    for batch in dataloader:
+        with torch.inference_mode():
+            model.model(batch['spec'].to(device=model.model.device, dtype=model.model.dtype))
+        progress_bar.update(len(batch['spec']))
+    progress_bar.close()
+
+    # Remove hooks
+    for h in hooks:
+        h.remove()
+
+    # Concatenate results
+    for i in layers_idx:
+        embeddings[i] = torch.cat(embeddings[i])
+        if attention_matrices:
+            attn_matrices[i] = torch.cat(attn_matrices[i])
+
+    # Simplify output if only one layer was requested
+    if len(layers_idx) == 1:
+        embeddings = embeddings[layers_idx[0]]
+        if attention_matrices:
+            attn_matrices = attn_matrices[layers_idx[0]]
+
+    if attention_matrices:
+        return embeddings, attn_matrices
+    return embeddings
 
 
-# TODO: refactor after `get_dreams_predictions` is refactored
-# def get_dreams_embeddings(model: T.Union[Path, str, DreaMS], df_spectra: T.Union[Path, str, pd.DataFrame], layers_idx=None,
-#                           precursor_only=True, batch_size=32, tqdm_batches=True, spec_col='PARSED PEAKS',
-#                           prec_mz_col='PRECURSOR M/Z', n_highest_peaks=128, return_attention_matrices=False,
-#                           spec_preproc: du.SpectrumPreprocessor = None):
-#
-#     # Load model and spectra
-#     model = load_model(model, model_cls=DreaMS)
-#     dataloader = load_spectra(df_spectra, batch_size, spec_col=spec_col, prec_mz_col=prec_mz_col,
-#                               n_highest_peaks=n_highest_peaks, spec_preproc=spec_preproc)
-#
-#     # Determine layers to extract embeddings from
-#     if not layers_idx:
-#         layers_idx = [model.n_layers - 1]
-#
-#     # Register hooks extracting embeddings
-#     hook_handles = []
-#     embeddings = {}
-#     def get_embeddings_hook(name):
-#         def hook(model, input, output):
-#             embs = output.detach()
-#             if precursor_only:
-#                 embs = embs[:, 0, :]
-#             if name not in embeddings.keys():
-#                 embeddings[name] = embs
+def dreams_attn_scores(model: T.Union[Path, str, DreaMSModel],
+                               msdata: T.Union[Path, str],
+                               layers_idx=None,
+                               precursor_only=True,
+                               batch_size=32,
+                               tqdm_batches=True,
+                               spec_col=SPECTRUM,
+                               prec_mz_col=PRECURSOR_MZ,
+                               n_highest_peaks=None,
+                               spec_preproc: du.SpectrumPreprocessor = None):
+    return dreams_intermediates(
+        model=model,
+        msdata=msdata,
+        layers_idx=layers_idx,
+        precursor_only=precursor_only,
+        batch_size=batch_size,
+        tqdm_batches=tqdm_batches,
+        spec_col=spec_col,
+        prec_mz_col=prec_mz_col,
+        n_highest_peaks=n_highest_peaks,
+        attention_matrices=True,
+        spec_preproc=spec_preproc
+    )[1]
+
+
+# TODO: Refactor
+# def generate_all_dreams_predictions(pth: T.Union[Path, str], batch_size=32, tqdm_batches=True,
+#                                  spec_col='PARSED PEAKS', prec_mz_col='PRECURSOR M/Z'):
+
+#     if isinstance(pth, str):
+#         pth = Path(pth)
+
+#     out_pth = io.append_to_stem(pth, 'DreaMS').with_suffix('.hdf5')
+
+#     with h5py.File(out_pth, 'w') as f:
+#         for m in PreTrainedModel.available_models():
+#             preds = compute_dreams_predictions(m, pth, batch_size=batch_size, tqdm_batches=tqdm_batches,
+#                                            spec_col=spec_col, prec_mz_col=prec_mz_col)
+#             preds = preds.squeeze().cpu().numpy()
+
+#             if m == 'Molecular properties':
+#                 for i, p in enumerate(mu.MolPropertyCalculator().prop_names):
+#                     f.create_dataset(p, data=preds[:, i])
 #             else:
-#                 embeddings[name] = torch.cat([embeddings[name], embs])
-#         return hook
-#     for i in layers_idx:
-#         hook_handles.append(model.transformer_encoder.ffs[i].register_forward_hook(get_embeddings_hook(i)))
-#
-#     # Register hooks extracting attention matrices
-#     attn_matrices = {}
-#     if return_attention_matrices:
-#         def get_attn_scores_hook(name):
-#             def hook(model, input, output):
-#                 output = output[1].detach()
-#                 if name not in attn_matrices.keys():
-#                     attn_matrices[name] = output
-#                 else:
-#                     attn_matrices[name] = torch.cat([attn_matrices[name], output])
-#             return hook
-#         for i in layers_idx:
-#             hook_handles.append(model.transformer_encoder.atts[i].register_forward_hook(get_attn_scores_hook(i)))
-#
-#     # Perform forward passes
-#     for batch in tqdm(dataloader, desc='Computing DreaMS', disable=not tqdm_batches):
-#         with torch.inference_mode():
-#             _ = model(batch['spec'].to(device=model.device, dtype=model.dtype))
-#
-#     # Remove hooks
-#     for h in hook_handles:
-#         h.remove()
-#
-#     # Simplify output if only one layer was requested (no 1-element list)
-#     if len(layers_idx) == 1:
-#         embeddings = embeddings[layers_idx[0]]
-#
-#     if return_attention_matrices:
-#         return embeddings, attn_matrices
-#     return embeddings
+#                 f.create_dataset(m, data=preds)
 
 
 # TODO: get_dreams_embeddings as a wrapper over pre-defined get_dreams_predictions
