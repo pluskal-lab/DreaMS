@@ -247,8 +247,7 @@ class DreaMSAtlas:
         print(f'Loaded DreaMS Atlas edges ({self.csrknn.n_edges:,} edges).')
 
         self.dreams_clusters = pd.read_csv(
-            utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN_clusters.csv'),
-            in_mem=False
+            utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN_clusters.csv')
         )['clusters']
         print(f'Loaded DreaMS Atlas nodes representing DreaMS k-NN clusters of GeMS-C1 ({self.dreams_clusters.nunique():,} nodes).')
 
