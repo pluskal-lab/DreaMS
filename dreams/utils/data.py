@@ -428,8 +428,8 @@ class MSData:
             if k not in self.f.keys():
                 raise ValueError(f'Column "{k}" is not present in the dataset {hdf5_pth}.')
 
-        # if self.f[spec_col].shape[1] != 2 or len(self.f[spec_col].shape) != 3:
-        #     raise ValueError('Shape of spectra has to be (num_spectra, 2 (m/z, intensity), num_peaks).')
+        if self.f[spec_col].shape[1] != 2 or len(self.f[spec_col].shape) != 3:
+            raise ValueError('Shape of spectra has to be (num_spectra, 2 (m/z, intensity), num_peaks).')
 
         num_spectra = set()
         for k in self.f.keys():
@@ -459,7 +459,7 @@ class MSData:
         else:
             col = col[:]
             if col.dtype == object:
-                col = col.astype(str)
+                col = np.char.decode(col.astype(bytes), 'utf-8', errors='ignore')
             return col
 
     def load_hdf5_in_mem(self, group):
@@ -567,6 +567,12 @@ class MSData:
         return MSData.from_pandas(df, hdf5_pth=pth.with_suffix('.hdf5'), in_mem=in_mem, **kwargs)
 
     @staticmethod
+    def from_pickle(pth: Union[Path, str], in_mem=True, **kwargs):
+        pth = Path(pth)
+        df = pd.read_pickle(pth)
+        return MSData.from_pandas(df, hdf5_pth=pth.with_suffix('.hdf5'), in_mem=in_mem, **kwargs)
+
+    @staticmethod
     def load(pth: Union[Path, str], in_mem=False, **kwargs):
         pth = Path(pth)
         if pth.suffix.lower() == '.hdf5':
@@ -593,12 +599,12 @@ class MSData:
             df[SPECTRUM] = list(self.get_spectra())
         return pd.DataFrame(df)
 
-    def get_values(self, col, idx=None):
+    def get_values(self, col, idx=None, decode_strings=True):
         col = self.data[col]
         col = col[idx] if idx is not None else col[:]
-        if isinstance(col, bytes):
+        if decode_strings and isinstance(col, bytes):
             col = col.decode('utf-8')
-        elif col.dtype == object:
+        elif decode_strings and col.dtype == object:
             col = col.astype(str)
         return col
 
@@ -666,11 +672,12 @@ class MSData:
         self.f[name].resize((self.f[name].shape[0] + data.shape[0], *data.shape[1:]))
         self.f[name][-data.shape[0]:] = data
 
-    def form_subset(self, idx, out_pth):
+    def form_subset(self, idx, out_pth, verbose=False):
         with h5py.File(out_pth, 'w') as f:
             for k in self.columns():
-                print(f'Creating dataset "{k}"...')
-                f.create_dataset(k, data=self.get_values(k)[:][idx], dtype=self.f[k].dtype)
+                if verbose:
+                    print(f'Creating dataset "{k}"...')
+                f.create_dataset(k, data=self.get_values(k, decode_strings=False)[:][idx], dtype=self.f[k].dtype)
         return MSData(out_pth)
 
     def spec_to_matchms(self, i: int) -> Spectrum:
