@@ -593,10 +593,11 @@ class MSData:
 
     def to_pandas(self, unpad=True):
         df = {col: self.get_values(col) for col in self.columns() if col != SPECTRUM}
+
+        df[SPECTRUM] = list(self.get_spectra())
         if unpad:
-            df[SPECTRUM] = [su.unpad_peak_list(p) for p in self.get_spectra()]
-        else:
-            df[SPECTRUM] = list(self.get_spectra())
+            df[SPECTRUM] = [su.unpad_peak_list(s) for s in df[SPECTRUM]]
+
         return pd.DataFrame(df)
 
     def get_values(self, col, idx=None, decode_strings=True):
