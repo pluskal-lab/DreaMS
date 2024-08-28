@@ -550,6 +550,8 @@ def plot_spectrum(spec, hue=None, xlim=None, ylim=None, mirror_spec=None, highl_
 
     # Setup color palette
     if hue is not None:
+        if len(hue) != len(mzs):
+            raise ValueError('Length of hue must be equal to the number of peaks in the spectrum.')
         norm = matplotlib.colors.Normalize(vmin=min(hue), vmax=max(hue), clip=True)
         mapper = cm.ScalarMappable(norm=norm, cmap=cm.cool)
         plt.colorbar(mapper, ax=ax)
