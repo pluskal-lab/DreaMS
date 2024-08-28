@@ -230,7 +230,7 @@ class DreaMSAtlas:
 
         print('Initializing DreaMS Atlas data structures...')
         self.lib = du.MSData(
-            utils.gems_hf_download('DreaMS_Atlas/nist20_mona_clean_merged_spectra_dreams.hdf5'),
+            utils.gems_hf_download('DreaMS_Atlas/nist20_mona_clean_merged_spectra_dreams_hidden_nist20.hdf5'),
             in_mem=False
         )
         print(f'Loaded spectral library ({len(self.lib):,} spectra).')
