@@ -605,7 +605,7 @@ class MSData:
         if decode_strings and isinstance(col, bytes):
             col = col.decode('utf-8')
         elif decode_strings and col.dtype == object:
-            col = col.astype(str)
+            col = [s.decode('utf-8') if isinstance(s, bytes) else s for s in col]
         return col
 
     def __len__(self):
