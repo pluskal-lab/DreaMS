@@ -170,21 +170,28 @@ def dreams_intermediates(model: T.Union[Path, str, PreTrainedModel], msdata: T.U
     if not layers_idx:
         layers_idx = [model.model.n_layers - 1]
 
-    # Prepare hooks for extracting embeddings and attention matrices
-    embeddings = {i: [] for i in layers_idx}
-    attn_matrices = {i: [] for i in layers_idx} if attention_matrices else None
+    # Prepare tensors for storing embeddings and attention matrices
+    embeddings = {i: None for i in layers_idx}
+    attn_matrices = {i: None for i in layers_idx} if attention_matrices else None
 
     def get_embeddings_hook(layer_idx):
         def hook(module, input, output):
-            embs = output.detach()
+            embs = output.detach().cpu()
             if precursor_only:
                 embs = embs[:, 0, :]
-            embeddings[layer_idx].append(embs)
+            if embeddings[layer_idx] is None:
+                embeddings[layer_idx] = embs
+            else:
+                embeddings[layer_idx] = torch.cat([embeddings[layer_idx], embs])
         return hook
 
     def get_attn_scores_hook(layer_idx):
         def hook(module, input, output):
-            attn_matrices[layer_idx].append(output[1].detach())
+            attn = output[1].detach().cpu()
+            if attn_matrices[layer_idx] is None:
+                attn_matrices[layer_idx] = attn
+            else:
+                attn_matrices[layer_idx] = torch.cat([attn_matrices[layer_idx], attn])
         return hook
 
     # Register hooks
@@ -209,12 +216,6 @@ def dreams_intermediates(model: T.Union[Path, str, PreTrainedModel], msdata: T.U
     # Remove hooks
     for h in hooks:
         h.remove()
-
-    # Concatenate results
-    for i in layers_idx:
-        embeddings[i] = torch.cat(embeddings[i])
-        if attention_matrices:
-            attn_matrices[i] = torch.cat(attn_matrices[i])
 
     # Simplify output if only one layer was requested
     if len(layers_idx) == 1:
