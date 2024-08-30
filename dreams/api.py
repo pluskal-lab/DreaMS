@@ -119,7 +119,7 @@ def dreams_predictions(
     )
     for i, batch in enumerate(dataloader):
         with torch.inference_mode():
-            pred = model(batch['spec'].to(device=model.device, dtype=model.dtype))
+            pred = model(batch[SPECTRUM].to(device=model.device, dtype=model.dtype))
 
             # Store predictions to cpu to avoid high memory allocation issues
             pred = pred.cpu()
@@ -129,7 +129,7 @@ def dreams_predictions(
                 preds = torch.cat([preds, pred])
 
             # Update the progress bar by the number of samples in the current batch
-            progress_bar.update(len(batch['spec']))
+            progress_bar.update(len(batch[SPECTRUM]))
     progress_bar.close()
 
     preds = preds.squeeze().cpu().numpy()
@@ -209,8 +209,8 @@ def dreams_intermediates(model: T.Union[Path, str, PreTrainedModel], msdata: T.U
     )
     for batch in dataloader:
         with torch.inference_mode():
-            model.model(batch['spec'].to(device=model.model.device, dtype=model.model.dtype))
-        progress_bar.update(len(batch['spec']))
+            model.model(batch[SPECTRUM].to(device=model.model.device, dtype=model.model.dtype))
+        progress_bar.update(len(batch[SPECTRUM]))
     progress_bar.close()
 
     # Remove hooks
