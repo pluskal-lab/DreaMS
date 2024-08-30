@@ -480,12 +480,12 @@ class MSData:
     def from_pandas(
         df: Union[Path, str, pd.DataFrame],
         n_highest_peaks=128,
-        spec_col=SPECTRUM,  # The default values are set according to NIST20 format
+        spec_col=SPECTRUM,
         prec_mz_col=PRECURSOR_MZ,
         adduct_col=ADDUCT,
         charge_col=CHARGE,
-        smiles_col=SMILES,
-        ignore_cols=('ROMol'),
+        mol_col=SMILES,
+        ignore_cols=(),
         in_mem=True,
         hdf5_pth=None,
         compression_opts=0
@@ -495,8 +495,8 @@ class MSData:
         if isinstance(df, str):
             df = Path(df)
         if isinstance(df, Path):
-            df = pd.read_pickle(df)
             hdf5_pth = df.with_suffix('.hdf5')
+            df = pd.read_pickle(df)
         else:
             if hdf5_pth is None:
                 raise ValueError('`hdf5_pth` has to be specified if `df` is not a Path.')
@@ -514,7 +514,6 @@ class MSData:
         # Convert dataframe columns to .hdf5 datasets
         with h5py.File(hdf5_pth, 'w') as f:
             for k, v in df.items():
-                
                 if k in ignore_cols:
                     continue
 
@@ -527,18 +526,22 @@ class MSData:
                         pls.append(p)
                     v = np.stack(pls)
                 else:
-                    if v.dtype == object:
-                        v = v.astype(str)
-                    v = v.values
-
                     if k == prec_mz_col:
                         k = PRECURSOR_MZ
                     elif k == adduct_col:
                         k = ADDUCT
                     elif k == charge_col:
                         k = CHARGE
-                    elif k == smiles_col:
+                    elif k == mol_col:
                         k = SMILES
+                        if isinstance(v[0], str) and v[0].startswith('InChI='):
+                            v = [Chem.MolFromInchi(i) for i in v]
+                        if isinstance(v[0], Chem.rdchem.Mol):
+                            v = pd.Series([Chem.MolToSmiles(m) for m in v])
+
+                    if v.dtype == object:
+                        v = v.astype(str)
+                    v = v.values
 
                 f.create_dataset(k, data=v, compression='gzip', compression_opts=compression_opts)
         return MSData(hdf5_pth, in_mem=in_mem)
@@ -591,12 +594,13 @@ class MSData:
     def to_torch_dataset(self, spec_preproc: SpectrumPreprocessor):
         return RawSpectraDataset(self.get_spectra(), self.get_prec_mzs(), spec_preproc)
 
-    def to_pandas(self, unpad=True):
-        df = {col: self.get_values(col) for col in self.columns() if col != SPECTRUM}
+    def to_pandas(self, unpad=True, ignore_cols=()):
+        df = {col: self.get_values(col) for col in self.columns() if col not in ignore_cols}
 
-        df[SPECTRUM] = list(self.get_spectra())
-        if unpad:
-            df[SPECTRUM] = [su.unpad_peak_list(s) for s in df[SPECTRUM]]
+        if SPECTRUM not in ignore_cols:
+            df[SPECTRUM] = list(self.get_spectra())
+            if unpad:
+                df[SPECTRUM] = [su.unpad_peak_list(s) for s in df[SPECTRUM]]
 
         return pd.DataFrame(df)
 
