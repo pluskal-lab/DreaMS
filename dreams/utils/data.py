@@ -377,7 +377,7 @@ class RawSpectraDataset(Dataset):
 
     def __getitem__(self, i):
         spectrum = self.spec_preproc(self.spectra[i], prec_mz=self.prec_mzs[i], high_form=False)
-        return {'spec': spectrum}
+        return {SPECTRUM: spectrum, PRECURSOR_MZ: self.prec_mzs[i]}
 
     # @abstractmethod
     # def add_preds(self, labels, labels_name):
