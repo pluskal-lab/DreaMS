@@ -458,8 +458,8 @@ class MSData:
             return self.load_hdf5_in_mem(col)
         else:
             col = col[:]
-            if col.dtype == object:
-                col = np.char.decode(col.astype(bytes), 'utf-8', errors='ignore')
+            # if col.dtype == object:
+            #     col = np.char.decode(col.astype(bytes), 'utf-8', errors='ignore')
             return col
 
     def load_hdf5_in_mem(self, group):
@@ -780,6 +780,9 @@ class MSData:
                             f_out[k][-data.shape[0]:] = data
         
         return MSData(out_pth, in_mem=in_mem)
+    
+    def __repr__(self) -> str:
+        return f'MSData(pth={self.hdf5_pth}, in_mem={self.in_mem}) with {len(self):,} spectra.'
 
 
 class ContrastiveSpectraDataset(Dataset):
