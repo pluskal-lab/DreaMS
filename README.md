@@ -21,8 +21,8 @@ git clone https://github.com/pluskal-lab/DreaMS.git; cd DreaMS
 To compute DreaMS representations for MS/MS spectra from `.mgf` file, run the following Python code.
 
 ``` python
-from dreams.api import compute_dreams_embeddings
-dreams_embeddings = compute_dreams_embeddings('data/examples/example_5_spectra.mgf')
+from dreams.api import dreams_embeddings
+dreams_embeddings = dreams_embeddings('data/examples/example_5_spectra.mgf')
 ```
 
 The resulting `dreams_embeddings` object is a matrix with 5 rows and 1024 columns, representing 5 1024-dimensional DreaMS representations for 5 input spectra stored in the `.mgf` file.
