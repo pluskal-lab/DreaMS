@@ -1,3 +1,4 @@
+import sys
 import h5py
 import torch
 import pandas as pd
@@ -71,8 +72,14 @@ class PreTrainedModel:
 
 
 def dreams_predictions(
-        model_ckpt: T.Union[PreTrainedModel, FineTuningHead, DreaMSModel, Path, str], spectra: T.Union[Path, str],
-        model_cls=None, batch_size=32, tqdm_batches=True, write_log=False, n_highest_peaks=None, title='',
+        model_ckpt: T.Union[PreTrainedModel, FineTuningHead, DreaMSModel, Path, str],
+        spectra: T.Union[Path, str],
+        model_cls=None,
+        batch_size=32,
+        progress_bar=True,
+        write_log=False,
+        n_highest_peaks=None,
+        title='',
         **msdata_kwargs
     ):
 
@@ -114,7 +121,7 @@ def dreams_predictions(
     progress_bar = tqdm(
         total=len(spectra),
         desc='Computing ' + title.replace('_', ' '),
-        disable=not tqdm_batches,
+        disable=not progress_bar,
         file=tqdm_logger if write_log else None
     )
     for i, batch in enumerate(dataloader):
@@ -143,10 +150,49 @@ def dreams_embeddings(pth, batch_size=32, tqdm_batches=True, write_log=False, **
     )
 
 
-def dreams_intermediates(model: T.Union[Path, str, PreTrainedModel], msdata: T.Union[Path, str], 
-                          layers_idx=None, precursor_only=True, batch_size=32, tqdm_batches=True, 
-                          spec_col=SPECTRUM, prec_mz_col=PRECURSOR_MZ, n_highest_peaks=60, 
-                          attention_matrices=False, spec_preproc: du.SpectrumPreprocessor = None):
+def dreams_intermediates(
+        model: T.Union[Path, str, PreTrainedModel],
+        msdata: T.Union[Path, str],
+        layers_idx=None,
+        precursor_only=True,
+        batch_size=32,
+        progress_bar=True,
+        spec_col=SPECTRUM,
+        prec_mz_col=PRECURSOR_MZ,
+        n_highest_peaks=60,
+        compute_attn_matrices=True,
+        compute_embeddings=False,
+        spec_preproc: du.SpectrumPreprocessor=None
+    ):
+    """
+    Extracts intermediate representations (embeddings and attention matrices) from individual layers of a DreaMS model.
+
+    This function allows for the extraction of both embeddings and attention matrices from specified layers of a DreaMS model.
+    It supports loading the model from a checkpoint and processing mass spectrometry data to obtain the desired intermediate
+    representations. The function is flexible, allowing for customization of various parameters such as batch size, the number
+    of highest peaks to consider, and whether to compute embeddings or attention matrices.
+
+    Args:
+        model (Union[Path, str, PreTrainedModel]): The model instance or the path to the model checkpoint file.
+        msdata (Union[Path, str]): The mass spectrometry data or the path to the data file.
+        layers_idx (list, optional): A list of layer indices from which to extract embeddings. If not provided, defaults to the last layer.
+        precursor_only (bool, optional): If True, only extract embeddings for the precursor ion. Defaults to True.
+        batch_size (int, optional): The number of samples to process in each batch. Defaults to 32.
+        progress_bar (bool, optional): If True, display a progress bar during processing and print a log. Defaults to True.
+        spec_col (str, optional): The column name in the data that contains the spectra. Defaults to SPECTRUM.
+        prec_mz_col (str, optional): The column name in the data that contains the precursor m/z values. Defaults to PRECURSOR_MZ.
+        n_highest_peaks (int, optional): The number of highest intensity peaks to consider in each spectrum. Defaults to 60.
+        compute_attn_matrices (bool, optional): If True, compute and return attention matrices from the model. Defaults to True.
+        compute_embeddings (bool, optional): If True, compute and return embeddings from the model. Defaults to False.
+        spec_preproc (du.SpectrumPreprocessor, optional): An instance of SpectrumPreprocessor for preprocessing the spectra. Defaults to None.
+
+    Returns:
+        dict: A dictionary containing the extracted embeddings and/or attention matrices. The keys are the layer indices, and the values
+              are the corresponding embeddings or attention matrices.
+    """
+
+    if not compute_attn_matrices and not compute_embeddings:
+        raise ValueError('Either attention matrices or embeddings must be set to True.')
 
     # Load model if not already a PreTrainedModel instance
     if not isinstance(model, PreTrainedModel):
@@ -170,46 +216,72 @@ def dreams_intermediates(model: T.Union[Path, str, PreTrainedModel], msdata: T.U
     if not layers_idx:
         layers_idx = [model.model.n_layers - 1]
 
-    # Prepare tensors for storing embeddings and attention matrices
-    embeddings = {i: None for i in layers_idx}
-    attn_matrices = {i: None for i in layers_idx} if attention_matrices else None
+    # Preallocate memory for embeddings
+    if compute_embeddings:
+        embeddings = {
+            i: torch.zeros((
+                len(msdata),
+                model.model.d_model
+            ), device='cpu', dtype=model.model.dtype)
+            for i in layers_idx
+        }
+    else:
+        embeddings = None
+    
+    # Preallocate memory for attention matrices
+    if compute_attn_matrices:
+        attn_matrices = {
+            i: torch.zeros((
+                len(msdata),
+                model.model.n_heads,
+                msdata[0][SPECTRUM].shape[0],
+                msdata[0][SPECTRUM].shape[0]
+            ), device='cpu', dtype=model.model.dtype)
+            for i in layers_idx
+        }
+    else:
+        attn_matrices = None
 
     def get_embeddings_hook(layer_idx):
         def hook(module, input, output):
-            embs = output.detach().cpu()
             if precursor_only:
-                embs = embs[:, 0, :]
-            if embeddings[layer_idx] is None:
-                embeddings[layer_idx] = embs
+                embs = output[:, 0, :]
             else:
-                embeddings[layer_idx] = torch.cat([embeddings[layer_idx], embs])
+                embs = output
+            embs = embs.detach().cpu()
+            start_idx = batch_start_idx
+            end_idx = start_idx + embs.size(0)
+            embeddings[layer_idx][start_idx:end_idx] = embs
         return hook
 
     def get_attn_scores_hook(layer_idx):
         def hook(module, input, output):
-            attn = output[1].detach().cpu()
-            if attn_matrices[layer_idx] is None:
-                attn_matrices[layer_idx] = attn
-            else:
-                attn_matrices[layer_idx] = torch.cat([attn_matrices[layer_idx], attn])
+            attn = output[1]
+            attn = attn.detach().cpu()
+            start_idx = batch_start_idx
+            end_idx = start_idx + attn.size(0)
+            attn_matrices[layer_idx][start_idx:end_idx] = attn
         return hook
 
     # Register hooks
     hooks = []
     for i in layers_idx:
-        hooks.append(model.model.transformer_encoder.ffs[i].register_forward_hook(get_embeddings_hook(i)))
-        if attention_matrices:
+        if compute_embeddings:
+            hooks.append(model.model.transformer_encoder.ffs[i].register_forward_hook(get_embeddings_hook(i)))
+        if compute_attn_matrices:
             hooks.append(model.model.transformer_encoder.atts[i].register_forward_hook(get_attn_scores_hook(i)))
 
     # Perform forward passes
     progress_bar = tqdm(
         total=len(msdata),
-        desc='Computing DreaMS representations',
-        disable=not tqdm_batches
+        desc='Computing DreaMS intermediate representations',
+        disable=not progress_bar
     )
+    batch_start_idx = 0
     for batch in dataloader:
         with torch.inference_mode():
             model.model(batch[SPECTRUM].to(device=model.model.device, dtype=model.model.dtype))
+        batch_start_idx += len(batch[SPECTRUM])
         progress_bar.update(len(batch[SPECTRUM]))
     progress_bar.close()
 
@@ -217,34 +289,46 @@ def dreams_intermediates(model: T.Union[Path, str, PreTrainedModel], msdata: T.U
     for h in hooks:
         h.remove()
 
+    # Convert to numpy
+    if compute_embeddings:
+        embeddings = {i: v.numpy() for i, v in embeddings.items()}
+    if compute_attn_matrices:
+        attn_matrices = {i: v.numpy() for i, v in attn_matrices.items()}
+
     # Simplify output if only one layer was requested
     if len(layers_idx) == 1:
-        embeddings = embeddings[layers_idx[0]]
-        if attention_matrices:
+        if compute_embeddings:
+            embeddings = embeddings[layers_idx[0]]
+        if compute_attn_matrices:
             attn_matrices = attn_matrices[layers_idx[0]]
 
-    if attention_matrices:
+    # Return embeddings and/or attention matrices
+    if compute_embeddings and compute_attn_matrices:
         return embeddings, attn_matrices
-    return embeddings
+    elif compute_embeddings:
+        return embeddings
+    return attn_matrices
 
 
-def dreams_attn_scores(model: T.Union[Path, str, DreaMSModel],
-                               msdata: T.Union[Path, str],
-                               layers_idx=None,
-                               precursor_only=True,
-                               batch_size=32,
-                               tqdm_batches=True,
-                               spec_col=SPECTRUM,
-                               prec_mz_col=PRECURSOR_MZ,
-                               n_highest_peaks=None,
-                               spec_preproc: du.SpectrumPreprocessor = None):
+def dreams_attn_scores(
+        model: T.Union[Path, str, DreaMSModel],
+        msdata: T.Union[Path, str],
+        layers_idx=None,
+        precursor_only=True,
+        batch_size=32,
+        progress_bar=True,
+        spec_col=SPECTRUM,
+        prec_mz_col=PRECURSOR_MZ,
+        n_highest_peaks=None,
+        spec_preproc: du.SpectrumPreprocessor = None
+    ):
     return dreams_intermediates(
         model=model,
         msdata=msdata,
         layers_idx=layers_idx,
         precursor_only=precursor_only,
         batch_size=batch_size,
-        tqdm_batches=tqdm_batches,
+        progress_bar=progress_bar,
         spec_col=spec_col,
         prec_mz_col=prec_mz_col,
         n_highest_peaks=n_highest_peaks,
