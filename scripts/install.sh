@@ -26,6 +26,7 @@ pip install git+https://github.com/YuanyueLi/SpectralEntropy.git@master
 pip install jupyter==1.0.0
 pip install molplotly==1.1.7
 pip install fire==0.6.0
+pip install huggingface_hub==0.24.5
 
 # Install DreaMS
 pip install -e .
