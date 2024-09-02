@@ -319,15 +319,23 @@ def read_ms(pth, peaks_tag='>ms2peaks', charge_tag='#Charge', prec_mz_tag='#Prec
         return data
 
 
-def read_textual_ms_format(pth, spectrum_end_line, name_value_sep, prec_mz_name, charge_name=None, adduct_name=None,
-                           ignore_line_prefixes=()):
+def read_textual_ms_format(
+        pth,
+        spectrum_end_line,
+        name_value_sep,
+        prec_mz_name,
+        charge_name='CHARGE',
+        adduct_name='ADDUCT',
+        smiles_name='SMILES',
+        ignore_line_prefixes=()
+    ):
     # TODO: this is very raw and dirty.
 
     # Two numbers separated with a white space
     peak_pattern = re.compile(r'\b([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\s([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\b')
     # A word followed by an arbitrary string separated with `name_value_sep`
     attr_pattern = re.compile(rf'^\s*([A-Z_]+){name_value_sep}(.*)\s*$')
-    attr_mapping = {prec_mz_name: PRECURSOR_MZ, charge_name: CHARGE, adduct_name: ADDUCT}
+    attr_mapping = {prec_mz_name: PRECURSOR_MZ, charge_name: CHARGE, adduct_name: ADDUCT, smiles_name: SMILES}
 
     data = []
     with open(pth, 'r') as f:
@@ -373,24 +381,25 @@ def read_textual_ms_format(pth, spectrum_end_line, name_value_sep, prec_mz_name,
     return pd.DataFrame(data)
 
 
-def read_msp(pth):
+def read_msp(pth, **kwargs):
     return read_textual_ms_format(
         pth=pth,
         spectrum_end_line='',
         name_value_sep=': ',
         prec_mz_name='PRECURSORMZ',
-        ignore_line_prefixes=('#',)
+        ignore_line_prefixes=('#',),
+        **kwargs
     )
 
 
-def read_mgf(pth):
+def read_mgf(pth, **kwargs):
     return read_textual_ms_format(
         pth=pth,
         spectrum_end_line='END IONS',
         name_value_sep='=',
         prec_mz_name='PEPMASS',
-        charge_name='CHARGE',
-        ignore_line_prefixes=('#',)
+        ignore_line_prefixes=('#',),
+        **kwargs
     )
 
 
