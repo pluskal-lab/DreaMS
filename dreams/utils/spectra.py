@@ -11,6 +11,7 @@ from matchms.similarity import ModifiedCosine
 import matplotlib
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
+import matplotlib.ticker as ticker
 import dreams.utils.misc as utils
 import plotly.graph_objs as go
 from typing import List, Union, Iterable
@@ -440,69 +441,6 @@ class MSnSpectrum:
     def get_peaks_n(self):
         return len(self.get_mzs())
 
-    # def to_TIC(self):
-    #     """
-    #     Returns new spectrum with intensities normalized to sum up to 1.
-    #     """
-    #     pass
-
-    #     # Create new instance of MSnSpectrum
-    #     # TODO
-    #     #tic = MSnSpectrum(self.get_peaks(), self.precursor_mol)
-
-    #     # Define normalizer
-    #     normalizer = pyms.Normalizer()
-    #     param = normalizer.getParameters()
-    #     param.setValue('method', 'to_TIC')
-    #     normalizer.setParameters(param)
-
-    #     # Transform spectrum
-    #     normalizer.filterSpectrum(tic)
-
-    #     return tic
-
-    # def is_TIC(self):
-    #     return math.isclose(sum(self.get_peaks()[1]), 1.0, abs_tol=1e-4)
-
-    # TODO: rewrite to plotly
-    # def plot(self, highl_peaks=[]):
-    #     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4), dpi=100)
-    #
-    #     # Plot every peak in spectrum and annotate m/z for peaks with
-    #     for peak_i, (mz, i) in enumerate(zip(*self.get_peak_list())):
-    #         color = 'red' if peak_i in highl_peaks else 'navy'
-    #         ax1.plot([mz, mz], [0, i], color=color)
-    #         if i >= 10.0 or peak_i == self.get_peaks_n() - 1 or peak_i == 0:
-    #             ax1.text(mz, i, '{:.4f}'.format(mz))
-    #
-    #     ax1.set_ylabel('Intensity')
-    #     ax1.set_xlabel('M/z')
-    #     ax1.set_ylim(bottom=0)
-    #
-    #     # Plot precursor structure
-    #     if self.precursor_mol:
-    #         img = Draw.MolToImage(self.precursor_mol)
-    #         ax2.imshow(img, origin='upper')
-    #
-    #         # X axis label
-    #         formula_str = 'Formula: {}\n'.format(self.get_precursor_formula())
-    #         mz_str = 'M/z: {:.4f}\n'.format(self.precursor_mz) if self.precursor_mz else ''
-    #         mass_str = 'Mass: {:.4f}\n'.format(self.get_precursor_mass())
-    #         ax2_xlabel = ''.join([formula_str, mz_str, mass_str])
-    #         ax2.set_xlabel(ax2_xlabel)
-    #
-    #         ax2.set_xticks([])
-    #         ax2.set_yticks([])
-    #
-    #     plt.show()
-    def plot(self):
-        pass
-
-
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
-import matplotlib.cm as cm
-import matplotlib.ticker as ticker
 
 def plot_spectrum(
         spec,
