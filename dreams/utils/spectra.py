@@ -504,8 +504,21 @@ import matplotlib.colors as mcolors
 import matplotlib.cm as cm
 import matplotlib.ticker as ticker
 
-def plot_spectrum(spec, hue=None, xlim=None, ylim=None, mirror_spec=None, highl_idx=None, high_peaks_at=None,
-                  figsize=(6, 2), colors=None, save_pth=None, prec_mz=None, mirror_prec_mz=None):
+def plot_spectrum(
+        spec,
+        hue=None,
+        xlim=None,
+        ylim=None,
+        mirror_spec=None,
+        highl_idx=None,
+        high_peaks_at=None,
+        figsize=(6, 2),
+        colors=None,
+        save_pth=None,
+        prec_mz=None,
+        mirror_prec_mz=None,
+        normalize_intensities=True
+):
     """
     Plots a mass spectrum with optional mirror spectrum and highlighted peaks.
 
@@ -532,15 +545,19 @@ def plot_spectrum(spec, hue=None, xlim=None, ylim=None, mirror_spec=None, highl_
     else:
         colors = ['blue', 'green', 'red']
 
+    # Check if spectrum has correct shape and transpose if necessary
+    if len(spec.shape) != 2:
+        raise ValueError('Spectrum must have shape (2, num_peaks) or (num_peaks, 2).')
+    if spec.shape[0] != 2:
+        spec = spec.T
+
+    # Unpad peak list
+    spec = unpad_peak_list(spec)
+
     # Normalize input spectrum
-    def norm_spec(spec):
-        assert len(spec.shape) == 2
-        if spec.shape[0] != 2:
-            spec = spec.T
-        spec = unpad_peak_list(spec)
-        mzs, ins = to_rel_intensity(spec, scale_factor=100.0)
-        return mzs, ins
-    mzs, ins = norm_spec(spec)
+    if normalize_intensities:
+        spec = to_rel_intensity(spec, scale_factor=100.0)
+    mzs, ins = spec
 
     # Initialize plotting
     init_plotting(figsize=figsize)
@@ -588,7 +605,7 @@ def plot_spectrum(spec, hue=None, xlim=None, ylim=None, mirror_spec=None, highl_
     if ylim is not None:
         plt.ylim(ylim[0], ylim[1])
     plt.xlabel('m/z')
-    plt.ylabel('Intensity [%]')
+    plt.ylabel('Intensity [%]' if normalize_intensities else 'Intensity')
 
     # Add precursor m/z annotations
     if prec_mz is not None:
