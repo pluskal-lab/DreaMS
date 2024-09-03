@@ -7,17 +7,18 @@ DREAMS_DIR = pathlib.Path(__file__).parent.absolute()
 
 # Paths to datasets and their dirs
 DATA_DIR = DREAMS_DIR.parent / 'data'
-NIST20 = DATA_DIR / 'NIST20' / 'datasets'
+NIST20 = DATA_DIR / 'NIST20'
 NIST20_PKL = NIST20 / 'nist20_clean.pkl'
-MONA = DATA_DIR / 'MoNA' / 'datasets'
+MONA = DATA_DIR / 'MoNA'
 MONA_PKL = MONA / 'mona_clean.pkl'
-CASMI = DATA_DIR / 'CASMI' / 'datasets'
+CASMI = DATA_DIR / 'CASMI'
 CASMI_PKL = CASMI / 'casmi16.pkl'
 MASSIVE_DIR = DATA_DIR / 'MassIVE'
 MASSIVE_DATA = MASSIVE_DIR / 'data'
 MASSIVE_SCRIPTS = MASSIVE_DIR / 'scripts'
 MIST = DATA_DIR / 'MIST' / 'datasets'
-MERGED_DATASETS = DATA_DIR / 'merged' / 'datasets'
+MERGED_DATASETS = DATA_DIR / 'merged'
+GEMS_DIR = DATA_DIR / 'GeMS'
 
 # Molecules
 PUBCHEM = DATA_DIR / 'molecules' / 'pubchem'
@@ -25,6 +26,9 @@ PUBCHEM_FPS = PUBCHEM / 'cid_smiles_index.h5'
 
 # Experiments
 EXPERIMENTS_DIR = DREAMS_DIR.parent / 'experiments'
+
+# Scripts
+SCRIPTS_DIR = DREAMS_DIR.parent / 'scripts'
 
 # Misc
 MISC = DREAMS_DIR.parent / 'misc'
