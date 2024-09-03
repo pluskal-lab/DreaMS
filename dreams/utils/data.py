@@ -43,8 +43,44 @@ from dreams.definitions import *
 
 
 class SpectrumPreprocessor:
+    """
+    A class for preprocessing mass spectrometry spectra.
+
+    This class provides functionality to preprocess mass spectrometry spectra,
+    including peak trimming, padding, intensity normalization, and various
+    data augmentation techniques.
+
+    Attributes:
+        dformat (DataFormat): The data format specification.
+        prec_intens (float): The intensity of the precursor peak.
+        n_highest_peaks (int): The number of highest intensity peaks to keep.
+        spec_entropy_cleaning (bool): Whether to apply spectral entropy cleaning.
+        normalize_mzs (bool): Whether to normalize m/z values.
+        to_relative_intensities (bool): Whether to convert intensities to relative values.
+        precision (int): The precision of the output data (32 or 64 bit).
+        mz_shift_aug_p (float): The probability of applying m/z shift augmentation.
+        mz_shift_aug_max (float): The maximum m/z shift for augmentation.
+
+    Methods:
+        __call__(spec, prec_mz, high_form, augment): Preprocess a single spectrum.
+    """
+
     def __init__(self, dformat: DataFormat, prec_intens=1.1, n_highest_peaks=None, spec_entropy_cleaning=False,
                  normalize_mzs=False, precision=32, mz_shift_aug_p=0, mz_shift_aug_max=0, to_relative_intensities=True):
+        """
+        Initialize the SpectrumPreprocessor.
+
+        Args:
+            dformat (DataFormat): The data format specification.
+            prec_intens (float): The intensity of the precursor peak.
+            n_highest_peaks (int): The number of highest intensity peaks to keep.
+            spec_entropy_cleaning (bool): Whether to apply spectral entropy cleaning.
+            normalize_mzs (bool): Whether to normalize m/z values.
+            precision (int): The precision of the output data (32 or 64 bit).
+            mz_shift_aug_p (float): The probability of applying m/z shift augmentation.
+            mz_shift_aug_max (float): The maximum m/z shift for augmentation.
+            to_relative_intensities (bool): Whether to convert intensities to relative values.
+        """
         assert precision in {32, 64}
 
         self.dformat = dformat
@@ -60,13 +96,33 @@ class SpectrumPreprocessor:
         if self.n_highest_peaks is None:
             self.n_highest_peaks = self.dformat.max_peaks_n
 
-    def __call__(self, spec: np.array, prec_mz=None, high_form=True, augment=False):
+    def __call__(self, spec: np.array, prec_mz=None, high_form='auto', augment=False):
+        """
+        Preprocess a single spectrum.
 
+        Args:
+            spec (np.array): The input spectrum.
+            prec_mz (float): The precursor m/z value.
+            high_form (bool): Whether the input is in high form (n_peaks, 2) or not.
+            augment (bool): Whether to apply data augmentation.
+
+        Returns:
+            np.array: The preprocessed spectrum.
+        """
         spec = spec.copy()
+
+        if high_form == 'auto':
+            if spec.shape[0] == 2 and spec.shape[1] == 2:
+                raise ValueError(f'high_form = {"auto"} is ambiguous for a peak list with two peaks of shape {spec.shape}')
+            else:
+                high_form = spec.shape[1] == 2
 
         # (2, n_peaks) -> (n_peaks, 2)
         if not high_form:
             spec = spec.T
+
+        if spec.shape[1] != 2:
+            raise ValueError(f'Spectrum is not in the shape (n_peaks, 2) but has shape {spec.shape}')
 
         # Clean spectrum as in spectral entropy paper
         if self.spec_entropy_cleaning:
@@ -79,7 +135,6 @@ class SpectrumPreprocessor:
         else:
             raise ValueError('It should never happen, since the class is designed for torch dataloaders requiring same'
                              'num. of peaks within batches.')
-            # spec = su.pad_peak_list(spec.T, pad_len=self.dformat.max_peaks_n).T
 
         # Normalize intensities to be relative to base peak
         if self.to_relative_intensities:
@@ -106,12 +161,67 @@ class SpectrumPreprocessor:
 
 
 class MaskedSpectraDataset(Dataset):
+    """
+    A dataset class for masked spectra used in self-supervised learning tasks.
+
+    This class prepares spectra data for various self-supervised learning objectives
+    such as peak masking, m/z masking, and intensity masking.
+
+    Attributes:
+        data (dict): The dataset containing spectra and related information.
+        dformat (DataFormat): The data format specification.
+        ssl_objective (str): The self-supervised learning objective.
+        spec_preproc (SpectrumPreprocessor): The spectrum preprocessor.
+        frac_masks (float): The fraction of peaks to mask.
+        min_n_masks (int): The minimum number of peaks to mask.
+        n_samples (int): The number of samples to use from the dataset.
+        mask_val (float): The value to use for masked peaks.
+        min_mask_intens (float): The minimum intensity for peaks to be considered for masking.
+        mask_prec (bool): Whether to mask the precursor peak.
+        deterministic_mask (bool): Whether to use deterministic masking.
+        mask_peaks (bool): Whether to mask peaks.
+        mask_intens_strategy (str): The strategy for masking intensities.
+        ret_order_pairs (bool): Whether to return retention order pairs.
+        return_charge (bool): Whether to return charge information.
+        acc_est_weight (bool): Whether to use accuracy estimation weighting.
+        lsh_weight (bool): Whether to use LSH weighting.
+        bert801010_masking (bool): Whether to use BERT-style 80-10-10 masking.
+
+    Methods:
+        __len__(): Return the length of the dataset.
+        __getitem__(i): Get a single item from the dataset.
+        get_spec(i): Get a preprocessed spectrum.
+    """
+
     def __init__(self, in_pth: Path, dformat: DataFormat, ssl_objective: str, spec_preproc: SpectrumPreprocessor,
                  mask_peaks=True, mask_intens_strategy='intens_p', frac_masks=0.2, min_n_masks=2, mask_val=-1.,
                  min_mask_intens=0.1, mask_prec=False, n_samples=None, logger=None, deterministic_mask=True,
                  ret_order_pairs=False, return_charge=False, acc_est_weight=False, lsh_weight=False,
                  bert801010_masking=False):
+        """
+        Initialize the MaskedSpectraDataset.
 
+        Args:
+            in_pth (Path): The input path for the dataset.
+            dformat (DataFormat): The data format specification.
+            ssl_objective (str): The self-supervised learning objective.
+            spec_preproc (SpectrumPreprocessor): The spectrum preprocessor.
+            mask_peaks (bool): Whether to mask peaks.
+            mask_intens_strategy (str): The strategy for masking intensities.
+            frac_masks (float): The fraction of peaks to mask.
+            min_n_masks (int): The minimum number of peaks to mask.
+            mask_val (float): The value to use for masked peaks.
+            min_mask_intens (float): The minimum intensity for peaks to be considered for masking.
+            mask_prec (bool): Whether to mask the precursor peak.
+            n_samples (int): The number of samples to use from the dataset.
+            logger (Logger): The logger object.
+            deterministic_mask (bool): Whether to use deterministic masking.
+            ret_order_pairs (bool): Whether to return retention order pairs.
+            return_charge (bool): Whether to return charge information.
+            acc_est_weight (bool): Whether to use accuracy estimation weighting.
+            lsh_weight (bool): Whether to use LSH weighting.
+            bert801010_masking (bool): Whether to use BERT-style 80-10-10 masking.
+        """
         assert ssl_objective in {'mask_peak', 'mask_mz', 'mask_intensity', 'mask_mz_hot', 'mask_peak_hot', 'shuffling'}
         assert mask_peaks or mask_prec
         assert not mask_prec or spec_preproc.prec_intens
@@ -137,11 +247,11 @@ class MaskedSpectraDataset(Dataset):
         self.bert801010_masking = bert801010_masking
 
         # Load dataset features
-        features = ['spectra', 'precursor mz']
+        features = [SPECTRUM, PRECURSOR_MZ]
         if self.return_charge:
-            features.append('charge')
+            features.append(CHARGE)
         if self.ret_order_pairs:
-            features += ['RT', 'name']
+            features += [RT, NAME]
         if self.acc_est_weight:
             features.append('instrument accuracy est.')
         if self.lsh_weight:
@@ -159,9 +269,9 @@ class MaskedSpectraDataset(Dataset):
             if len(features) > 2:
                 raise ValueError(f'.pkl datasets currently do not support features '
                                  f'{[f for f in features if f not in ["spectra", "precursor mz"]]}.')
-            df = pd.read_pickle(in_pth)
-            self.data['spectra'] = np.stack(df['PARSED PEAKS']).transpose((0, 2, 1))
-            self.data['precursor mz'] = np.stack(df['PRECURSOR M/Z'])
+            df = pd.read_pickle(in_pth)  # TODO: use MSData
+            self.data[SPECTRUM] = np.stack(df['PARSED PEAKS']).transpose((0, 2, 1))
+            self.data[PRECURSOR_MZ] = np.stack(df['PRECURSOR M/Z'])
         else:
             raise ValueError(f'Not supported input format {in_pth.suffix} of the data file {in_pth}.')
 
@@ -169,25 +279,39 @@ class MaskedSpectraDataset(Dataset):
         if self.ret_order_pairs:
             logger.info('Constructing the mapping from file names to corresponding spectra...')
             self.name_idx = {
-                n: np.where(self.data['name'] == n)[0]
+                n: np.where(self.data[NAME] == n)[0]
                 for n
-                in tqdm(np.unique(self.data['name']), desc='Indexing data for sampling retention order pairs.')
+                in tqdm(np.unique(self.data[NAME]), desc='Indexing data for sampling retention order pairs.')
             }
         if self.lsh_weight:
             logger.info('Constructing the Counter for LSHs...')
             self.lsh_weights = Counter(self.data['lsh'])
 
     def __len__(self):
+        """
+        Return the length of the dataset.
+
+        Returns:
+            int: The number of samples in the dataset.
+        """
         if self.n_samples:
             return self.n_samples
-        return self.data['spectra'].shape[0]
+        return self.data[SPECTRUM].shape[0]
 
     def get_spec(self, i):
+        """
+        Get a preprocessed spectrum.
 
+        Args:
+            i (int): The index of the spectrum to retrieve.
+
+        Returns:
+            dict: A dictionary containing the preprocessed spectrum and related information.
+        """
         # Get peak list
-        spectrum = self.data['spectra'][i]
-        prec_mz = self.data['precursor mz'][i]
-        spectrum = self.spec_preproc(spectrum, prec_mz=prec_mz, augment=True)
+        spectrum = self.data[SPECTRUM][i]
+        prec_mz = self.data[PRECURSOR_MZ][i]
+        spectrum = self.spec_preproc(spectrum, prec_mz=prec_mz, augment=True, high_form=False)
 
         # Make masking deterministic within spectrum
         if self.deterministic_mask:
@@ -195,11 +319,7 @@ class MaskedSpectraDataset(Dataset):
 
         if self.mask_prec and not self.mask_peaks:
             raise NotImplementedError
-            # TODO: need to be tested
-            # # Mask precursor peak m/z and similar m/z values
-            # mask_i = np.where((spectrum[:, 1] < self.prec_intens + 1) & (spectrum[:, 1] > self.prec_intens - 1))[0]
         else:
-
             # Initialize mask for all but non-padding tokens
             mask = spectrum[:, 1] > 0
 
@@ -214,7 +334,6 @@ class MaskedSpectraDataset(Dataset):
             n_peaks = mask.sum()
             n_masks = max(self.min_n_masks, round(n_peaks * self.frac_masks))
             if n_peaks > n_masks:
-
                 idx = np.where(mask)[0]
                 # Sample masking peaks proportionally to their intensities
                 sampling_p = spectrum[idx, 1] / spectrum[idx, 1].sum() if self.mask_intens_strategy == 'intens_p' else None
@@ -284,7 +403,7 @@ class MaskedSpectraDataset(Dataset):
         }
 
         if self.return_charge:
-            item['charge'] = self.data['charge'][i] / self.dformat.max_charge
+            item[CHARGE] = self.data[CHARGE][i] / self.dformat.max_charge
 
         if self.acc_est_weight:
             acc_weight = self.data['instrument accuracy est.'][i]
@@ -303,7 +422,7 @@ class MaskedSpectraDataset(Dataset):
             spec1 = self.get_spec(i)
 
             # Sample 2nd spectrum from the same file
-            same_file_idx = self.name_idx[self.data['name'][i]]
+            same_file_idx = self.name_idx[self.data[NAME][i]]
             if self.deterministic_mask:
                 np.random.seed(round(spec1['spec_real'][0, 0]))
             i2 = np.random.choice(same_file_idx)
@@ -311,7 +430,7 @@ class MaskedSpectraDataset(Dataset):
 
             # Prepare data dictionaries along with the retention order label
             item = {f'{k}_1': v for k, v in spec1.items()} | {f'{k}_2': v for k, v in spec2.items()}
-            item['ro_label'] = float(self.data['RT'][i] < self.data['RT'][i2])
+            item['ro_label'] = float(self.data[RT][i] < self.data[RT][i2])
             if self.spec_preproc.precision == 32:
                 item['ro_label'] = np.float32(item['ro_label'])
 
@@ -444,10 +563,11 @@ class MSData:
         if in_mem:
             print(f'Loading dataset {self.hdf5_pth.stem} into memory ({self.num_spectra} spectra)...')
             self.data = self.load_hdf5_in_mem(self.f)
+            self.f.close()  # Close the file if data is loaded into memory
 
     def __del__(self):
-        # TODO: optionally delete the file on exit
-        self.f.close()
+        if hasattr(self, 'f') and isinstance(self.f, h5py.File):
+            self.f.close()
 
     def columns(self):
         return list(self.data.keys())
