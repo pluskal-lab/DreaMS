@@ -41,6 +41,8 @@ from dreams.models.optimization.losses_metrics import FingerprintMetrics, CosSim
 from dreams.models.optimization.samplers import MaxVarBatchSampler
 from dreams.definitions import *
 
+def process_chunk(names_chunk, data_name):
+    return {n: np.where(data_name == n)[0] for n in names_chunk}
 
 class SpectrumPreprocessor:
     """
@@ -275,14 +277,23 @@ class MaskedSpectraDataset(Dataset):
         else:
             raise ValueError(f'Not supported input format {in_pth.suffix} of the data file {in_pth}.')
 
-        # Construct auxiliary mappings
+        # Construct the mapping from file names to corresponding spectra to sample retention order pairs
         if self.ret_order_pairs:
-            logger.info('Constructing the mapping from file names to corresponding spectra...')
-            self.name_idx = {
-                n: np.where(self.data[NAME] == n)[0]
-                for n
-                in tqdm(np.unique(self.data[NAME]), desc='Indexing data for sampling retention order pairs.')
-            }
+            logger.info('Constructing file name to spectra indices mapping for sampling retention order pairs...')
+            
+            # Convert names to integers to speed up the process
+            unique_names = np.unique(self.data[NAME])
+            name_to_int = {name: i for i, name in enumerate(unique_names)}
+            int_enc_names = np.array([name_to_int[name] for name in self.data[NAME]])
+
+            # Construct the mapping from file names to corresponding spectrum indices
+            self.name_idx = {}
+            for name in tqdm(
+                unique_names,
+                desc='Constructing file name to spectra indices mapping for sampling retention order pairs...'
+            ):
+                self.name_idx[name] = np.where(int_enc_names == name_to_int[name])[0]
+
         if self.lsh_weight:
             logger.info('Constructing the Counter for LSHs...')
             self.lsh_weights = Counter(self.data['lsh'])
