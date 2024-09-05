@@ -397,20 +397,22 @@ class DreaMS(pl.LightningModule):
     #         res = val.get_res()
     #         self.trainer.logger.experiment.log({'Attention entropy': res})
 
-    def on_train_epoch_end(self):
+    def on_validation_epoch_end(self):
         # TODO: refactor each validation to a separate callback similarly to linear probing
 
         # Spectrum -> InChI key retrieval validation
-        val = du.SpecRetrievalValidation(
-            NIST20 / 'nist20_clean_spec_entropy_[M+H]+_retrieval.pkl',
-            NIST20 / 'nist20_clean_spec_entropy_[M+H]+_50k_pairs_retrieval.pkl',
-            dformat=self.dformat,
-            spec_preproc=self.spec_preproc
-        )
-        data = val.get_data(device=self.device, torch_dtype=self.dtype)
-        embeddings = self.get_embeddings(data)
-        val.set_model_gains(embeddings)
-        self.log_dict({f'[NIST20] {k}': v for k, v in val.get_res().items()}, sync_dist=True)
+        if (NIST20 / 'nist20_clean_spec_entropy_[M+H]+_retrieval.pkl').exists() and \
+            (NIST20 / 'nist20_clean_spec_entropy_[M+H]+_50k_pairs_retrieval.pkl').exists():
+            val = du.SpecRetrievalValidation(
+                NIST20 / 'nist20_clean_spec_entropy_[M+H]+_retrieval.pkl',
+                NIST20 / 'nist20_clean_spec_entropy_[M+H]+_50k_pairs_retrieval.pkl',
+                dformat=self.dformat,
+                spec_preproc=self.spec_preproc
+            )
+            data = val.get_data(device=self.device, torch_dtype=self.dtype)
+            embeddings = self.get_embeddings(data)
+            val.set_model_gains(embeddings)
+            self.log_dict({f'[NIST20] {k}': v for k, v in val.get_res().items()}, sync_dist=True)
 
         # Correlation validation
         for df_pth in MONA.glob('*pairs.pkl'):
@@ -468,10 +470,13 @@ class DreaMS(pl.LightningModule):
         #     val.set_model_gains(self.get_attention_scores(val.get_data(self.device, torch_dtype=self.dtype)))
         #     res = val.get_res()
         #     self.trainer.logger.experiment.log({'Attention entropy': res})
+
+
     def get_embeddings(self, data, tqdm_batches=False, batch_size=None):
         return get_embeddings(self, data, batch_size=self.batch_size if batch_size is None else batch_size,
                               tqdm_batches=tqdm_batches)
 
+# TODO: remove
 
 def get_embeddings(model: DreaMS, data: Dict, batch_size=None, tqdm_batches=False, precursor_only=True,
                    layers_idx=None):
