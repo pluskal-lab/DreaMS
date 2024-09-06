@@ -60,6 +60,10 @@ class PreTrainedModel:
             # TODO: Include all pre-trained models
             raise ValueError(f'{name} is not a valid pre-trained model name. Choose from: {cls.available_models()}')
 
+        # Download model if it doesn't exist
+        if not ckpt_path.exists():
+            utils.download_pretrained_model(ckpt_path)
+
         return cls.from_ckpt(ckpt_path, ckpt_cls, n_highest_peaks)
 
     # def __init_model(self, model: T.Union[DreaMSModel, FineTuningHead], n_highest_peaks: int = 100):
@@ -144,9 +148,9 @@ def dreams_predictions(
     return preds
 
 
-def dreams_embeddings(pth, batch_size=32, tqdm_batches=True, write_log=False, **msdata_kwargs):
+def dreams_embeddings(pth, batch_size=32, progress_bar=True, write_log=False, **msdata_kwargs):
     return dreams_predictions(
-        DREAMS_EMBEDDING, pth, batch_size=batch_size, tqdm_batches=tqdm_batches, write_log=write_log, **msdata_kwargs
+        DREAMS_EMBEDDING, pth, batch_size=batch_size, progress_bar=progress_bar, write_log=write_log, **msdata_kwargs
     )
 
 

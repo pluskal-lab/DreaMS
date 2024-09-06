@@ -2,12 +2,19 @@ import pathlib
 import numpy as np
 import heapq
 import torch
+import os
 import pandas as pd
 import networkx as nx
 import plotly.graph_objects as go
 from collections import Counter
 from typing import Sequence
 from huggingface_hub import hf_hub_download
+from dreams.definitions import PRETRAINED
+
+
+def download_pretrained_model(model_name: str = 'embedding_model.ckpt'):
+    url = 'https://zenodo.org/records/10997887/files/' + model_name
+    os.system(f'wget {url} -O {PRETRAINED / model_name}')
 
 
 def networkx_to_dataframe(G: nx.Graph) -> pd.DataFrame:
