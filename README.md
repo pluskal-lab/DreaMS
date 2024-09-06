@@ -1,12 +1,19 @@
-# DreaMS (Deep Representations Empowering the Annotation of Mass Spectra)
+WORK IN PROGRESS
+
+<h1 align="center">DreaMS (Deep Representations Empowering the Annotation of Mass Spectra)</h1>
 
 <p align="center">
   <img src="assets/dreams_background.png"/>
 </p>
 
-Source code for the paper ["Emergence of molecular structures from repository-scale self-supervised learning on tandem mass spectra"](https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f).
+DreaMS (Deep Representations Empowering the Annotation of Mass Spectra) is a transformer-based neural network designed to interpret tandem mass spectrometry (MS/MS) data, introduced in the paper ["Emergence of molecular structures from repository-scale self-supervised learning on tandem mass spectra"](https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f). Pre-trained in a self-supervised manner on millions of unannotated spectra from the new GeMS (GNPS Experimental Mass Spectra) dataset, DreaMS learns rich molecular representations by predicting masked spectral peaks and chromatographic retention orders. Fine-tuned for tasks such as spectral similarity, molecular fingerprint prediction, chemical property inference, and fluorine detection, DreaMS achieves state-of-the-art performance across multiple mass spectrometry interpretation tasks. The DreaMS Atlas, a molecular network of 201 million MS/MS spectra annotated with DreaMS representations, and pre-trained models are publicly available for further research and development.
 
-This GitHub repository is a work in progress. We are planning to transform it into a user-friendly Python package during July-August 2024.
+This repository contains the code for the DreaMS project and showcases how to:
+
+- 🚀 Obtain DreaMS representations of MS/MS spectra and use them for downstream tasks such as spectral similarity search or molecular networking.
+- 🤖 Fine-tune DreaMS for your tasks of interest.
+- 💎 Download and use the large-scale GeMS dataset of unannotated MS/MS spectra.
+- 🌐 Explore the DreaMS Atlas, a molecular network of 201 million MS/MS spectra annotated with DreaMS representations.
 
 ## How to install
 
@@ -37,6 +44,6 @@ The resulting `dreams_embeddings` object is a matrix with 5 rows and 1024 column
 - [x] DreaMS Atlas exploration demo.
 - [ ] Upload weights of all models.
 - [x] Provide scripts to collect/download GeMS datasets.
-- [ ] Extend `dreams.api` with more functionality (e.g. attention heads analysis).
+- [x] Extend `dreams.api` with more functionality (e.g. attention heads analysis).
 - [x] Add tutorial notebooks.
 - [ ] Upload Murcko splits and detailed tutorial notebook.
