@@ -10,7 +10,7 @@ import random
 import igraph
 import networkx as nx
 import scipy
-import spectral_entropy
+# import spectral_entropy
 import plotly.graph_objects as go
 import torch.nn.functional as F
 import pytorch_lightning as pl
@@ -23,6 +23,7 @@ from matchms import Spectrum
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from rdkit import Chem
+from rdkit.Chem import DataStructs
 from tqdm import tqdm
 from typing import Optional, List, Union
 from sklearn import metrics
@@ -128,6 +129,7 @@ class SpectrumPreprocessor:
 
         # Clean spectrum as in spectral entropy paper
         if self.spec_entropy_cleaning:
+            raise NotImplementedError("Spectral entropy was removed as a dependency from the project.")
             spec = spectral_entropy.tools.clean_spectrum(spec)
 
         # Trim and pad peak list
@@ -1664,37 +1666,53 @@ class SSLProbingValidation(pl.Callback):
             raise ValueError(f'Invalid "evaluator_impl": {self.evaluator_impl}.')
 
 
-def evaluate_split(df, n=None, seed=1, n_workers=5):
+def evaluate_split(df_split, n_workers=5, smiles_col=SMILES, fold_col='fold'):
     """
-    Evaluates data split based on the standard Morgan Tanimoto similarity between validation and train folds.
+    Evaluates data split based on the Morgan Tanimoto similarity between validation and train folds.
+
+    Args:
+        df_split (pd.DataFrame): DataFrame containing the data split.
+        n_workers (int): Number of workers for parallel processing. Default is 5.
+        smiles_col (str): Column name for SMILES strings. Default is the SMILES constant.
+        fold_col (str): Column name for fold information. Default is 'fold'.
+
+    Returns:
+        dict: A dictionary containing maximum Tanimoto similarities for each fold.
+
+    Raises:
+        ValueError: If the fold column is not found or contains invalid values.
     """
 
-    random.seed(seed)
-    assert all([c in df.columns for c in ['val', 'ROMol']])
+    # Validate input data
+    if fold_col not in df_split.columns:
+        raise ValueError(f'Fold column "{fold_col}" not found in DataFrame columns: {df_split.columns}.')
+    if not set(df_split[fold_col]) <= set(['train', 'val', 'test']):
+        raise ValueError(f'Invalid fold values: {set(df_split[fold_col])}.')
 
-    if 'SMILES' not in df.columns:
-        df['SMILES'] = df['ROMol'].apply(Chem.MolToSmiles)
-    df_train = df[~df['val']].drop_duplicates('SMILES')
-    df_val = df[df['val']].drop_duplicates('SMILES')
+    # Generate Morgan fingerprints for each fold
+    fps = {}
+    for fold in df_split[fold_col].unique():
+        df_fold = df_split[df_split[fold_col] == fold]
+        df_fold = df_fold.drop_duplicates(subset=smiles_col)
+        fps[fold] = df_fold[smiles_col].progress_apply(lambda s: mu.morgan_fp(Chem.MolFromSmiles(s), as_numpy=False))
 
-    if n:
-        df_val = df_val.sample(n=n, random_state=seed)
+    # Function to compute maximum Tanimoto similarity
+    def max_train_tanimoto(test_fp, train_fps=fps['train']):
+        return max([DataStructs.FingerprintSimilarity(test_fp, train_fp) for train_fp in train_fps])
 
+    # Initialize parallel processing
     pandarallel.initialize(nb_workers=n_workers, progress_bar=True, use_memory_fs=False)
-    def max_train_sim(row):
-        max_sim, max_sim_mol = 0, None
-        for i, i_row in df_train.iterrows():
-            sim = mu.morgan_mol_sim(row['ROMol'], i_row['ROMol'])
-            if sim > max_sim:
-                max_sim, max_sim_mol = sim, i_row['ROMol']
-        return max_sim, max_sim_mol
-    df_val['Max train sim'] = df_val.parallel_apply(max_train_sim, axis=1)
-    df_val['Max train sim score'] = df_val['Max train sim'].apply(lambda s: s[0])
-    df_val['Max train sim ROMol'] = df_val['Max train sim'].apply(lambda s: s[1])
-    df_val.drop(columns=['Max train sim'])
-    df_val.head()
 
-    return df_val
+    # Compute maximum Tanimoto similarities
+    max_train_tanimotos = {}
+    if len(df_split[fold_col].unique()) == 2:
+        # For binary split (e.g., train/val)
+        max_train_tanimotos[fold] = fps[fold].parallel_apply(lambda f: max_train_tanimoto(f, fps['train']))
+    else:
+        # For ternary split (e.g., train/val/test)
+        max_train_tanimotos[fold] = fps[fold].parallel_apply(lambda f: max_train_tanimoto(f, pd.concat([fps['train'], fps['val']])))
+
+    return max_train_tanimotos
 
 
 # NOTE: deprecated because not suited for (wandb) logging
