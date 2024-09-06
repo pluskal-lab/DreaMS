@@ -1,5 +1,9 @@
 # DreaMS (Deep Representations Empowering the Annotation of Mass Spectra)
 
+<p align="center">
+  <img src="assets/dreams_background.png"/>
+</p>
+
 Source code for the paper ["Emergence of molecular structures from repository-scale self-supervised learning on tandem mass spectra"](https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f).
 
 This GitHub repository is a work in progress. We are planning to transform it into a user-friendly Python package during July-August 2024.
