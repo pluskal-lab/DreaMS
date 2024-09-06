@@ -33,10 +33,15 @@ class PreTrainedModel:
                 )
             )
         else:
+            # Download backbone model if it doesn't exist
+            backbone_pth = PRETRAINED / 'ssl_model.ckpt'
+            if not backbone_pth.exists():
+                utils.download_pretrained_model()
+
             return cls(
                 ckpt_cls.load_from_checkpoint(
-                ckpt_path,
-                backbone_pth=PRETRAINED / 'ssl_model.ckpt',
+                    ckpt_path,
+                    backbone_pth=backbone_pth,
                 map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
             ),
             n_highest_peaks=n_highest_peaks
@@ -57,7 +62,6 @@ class PreTrainedModel:
         #     ckpt_cls = RegressionHead
         #     n_highest_peaks = 100
         else:
-            # TODO: Include all pre-trained models
             raise ValueError(f'{name} is not a valid pre-trained model name. Choose from: {cls.available_models()}')
 
         # Download model if it doesn't exist
@@ -65,10 +69,6 @@ class PreTrainedModel:
             utils.download_pretrained_model(ckpt_path)
 
         return cls.from_ckpt(ckpt_path, ckpt_cls, n_highest_peaks)
-
-    # def __init_model(self, model: T.Union[DreaMSModel, FineTuningHead], n_highest_peaks: int = 100):
-    #     self.model = model.eval()
-    #     self.n_highest_peaks = n_highest_peaks
 
     @staticmethod
     def available_models():
@@ -339,32 +339,6 @@ def dreams_attn_scores(
         attention_matrices=True,
         spec_preproc=spec_preproc
     )[1]
-
-
-# TODO: Refactor
-# def generate_all_dreams_predictions(pth: T.Union[Path, str], batch_size=32, tqdm_batches=True,
-#                                  spec_col='PARSED PEAKS', prec_mz_col='PRECURSOR M/Z'):
-
-#     if isinstance(pth, str):
-#         pth = Path(pth)
-
-#     out_pth = io.append_to_stem(pth, 'DreaMS').with_suffix('.hdf5')
-
-#     with h5py.File(out_pth, 'w') as f:
-#         for m in PreTrainedModel.available_models():
-#             preds = compute_dreams_predictions(m, pth, batch_size=batch_size, tqdm_batches=tqdm_batches,
-#                                            spec_col=spec_col, prec_mz_col=prec_mz_col)
-#             preds = preds.squeeze().cpu().numpy()
-
-#             if m == 'Molecular properties':
-#                 for i, p in enumerate(mu.MolPropertyCalculator().prop_names):
-#                     f.create_dataset(p, data=preds[:, i])
-#             else:
-#                 f.create_dataset(m, data=preds)
-
-
-# TODO: get_dreams_embeddings as a wrapper over pre-defined get_dreams_predictions
-# TODO: cache loaded models in class
 
 
 class DreaMSAtlas:
