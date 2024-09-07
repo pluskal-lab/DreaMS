@@ -24,11 +24,11 @@ This repository provides the code and tutorials to:
 - 🤖 **Fine-tune DreaMS** for your specific tasks of interest.
 - 💎 Access and utilize the extensive **GeMS dataset** of unannotated MS/MS spectra.
 - 🌐 Explore the **DreaMS Atlas**, a molecular network of 201 million MS/MS spectra from diverse MS experiments annotated with DreaMS representations and metadata, such as studied species, experiment descriptions, etc.
+- ⭐ Efficiently **cluster MS/MS spectra** in linear time using locality-sensitive hashing (LSH).
 
-Additionally, for machine learning research:
+Additionally, for further research and development:
 - 🔄 Convert conventional MS/MS data formats into our new, **ML-friendly HDF5-based format**.
 - 📊 Split MS/MS datasets using **Murcko histograms** of molecular structures.
-- ⭐ Efficiently **cluster MS/MS spectra using locality-sensitive hashing (LSH)** in linear time.
 
 Please refer our [documentation](TODO) and a paper ["Emergence of molecular structures from repository-scale self-supervised learning on tandem mass spectra"](https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f) for more details.
 
