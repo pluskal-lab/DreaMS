@@ -1,5 +1,3 @@
-WORK IN PROGRESS
-
 <h1 align="center">DreaMS (Deep Representations Empowering the Annotation of Mass Spectra)</h1>
 
 <p align="center">
