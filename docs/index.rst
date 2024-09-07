@@ -24,12 +24,14 @@ Contents
    tutorials/compute_embeddings
    tutorials/library_matching
    tutorials/lsh_clustering
+   tutorials/atlas
 
 .. toctree::
    :maxdepth: 2
    :caption: Advanced
 
    tutorials/constructing_gems
+   tutorials/murcko_hist_split
 
 .. toctree::
    :maxdepth: 2
