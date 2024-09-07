@@ -67,3 +67,17 @@ The resulting `embs` object is a matrix with 5 rows and 1024 columns, representi
 - [x] Extend `dreams.api` with more functionality (e.g. attention heads analysis).
 - [x] Add tutorial notebooks.
 - [x] Upload Murcko splits and detailed tutorial notebook.
+
+## References
+
+If you use DreaMS in your research, please cite the following paper:
+
+```bibtex
+@article{bushuiev2024emergence,
+    author = {Bushuiev, Roman and Bushuiev, Anton and Samusevich, Raman and Brungs, Corinna and Sivic, Josef and Pluskal, Tomáš},
+    title = {Emergence of molecular structures from repository-scale self-supervised learning on tandem mass spectra},
+    journal = {ChemRxiv},
+    doi = {doi:10.26434/chemrxiv-2023-kss3r-v2},
+    year = {2024}
+}
+```
