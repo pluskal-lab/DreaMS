@@ -2,16 +2,21 @@ import numpy as np
 import rdkit.Chem.Scaffolds.MurckoScaffold as MurckoScaffold
 from rdkit import Chem
 from rdkit.Chem.rdchem import Mol
-from collections import Counter
+from typing import List, Set, Dict, Union, Tuple
 
 
-# TODO: docstrings
-
-
-def multirings(mol):
+def multirings(mol: Mol) -> List[Set[int]]:
     """
-    Returns a list of sets of atom indices belonging to "multiring"  in a molecule. Each "mutliring" is a generalized
-    ring, where ordinary fused rings are considered to be a single ring/set (therefore "mutliring" name).
+    Returns a list of sets of atom indices belonging to "multiring" in a molecule.
+
+    Each "multiring" is a generalized ring, where ordinary fused rings are considered
+    to be a single ring/set (hence the "multiring" name).
+
+    Args:
+        mol (Mol): The input RDKit molecule.
+
+    Returns:
+        List[Set[int]]: A list of sets, where each set contains atom indices belonging to a multiring.
     """
     br = [set(r) for r in mol.GetRingInfo().BondRings()]
     rings_bonds = []
@@ -33,14 +38,22 @@ def multirings(mol):
 
     return rings_atoms
 
-def break_rings(mol: Mol, rings_size=3):
+def break_rings(mol: Mol, rings_size: int = 3) -> Mol:
     """
-    Breaks all `rings_size`-membered rings in a molecule by removing a bond with minimal degree wrt rings. It is
-    supposed to be used prior to computing Murcko scaffolds.
-    NOTE: it is not tested and is probably not useful for rings_size != 3.
+    Breaks all rings of a specified size in a molecule by removing a bond with minimal degree with respect to rings.
+
+    This function is intended to be used prior to computing Murcko scaffolds.
+    NOTE: It is not extensively tested and may not be useful for rings_size != 3.
+
+    Args:
+        mol (Mol): The input RDKit molecule.
+        rings_size (int, optional): The size of rings to break. Defaults to 3.
+
+    Returns:
+        Mol: The modified RDKit molecule with specified rings broken.
     """
 
-    def get_ring(mol, size) -> list[int] | None:
+    def get_ring(mol: Mol, size: int) -> Union[List[int], None]:
         for ring in mol.GetRingInfo().BondRings():
             if len(ring) == size:
                 return list(set(ring))
@@ -59,10 +72,30 @@ def break_rings(mol: Mol, rings_size=3):
         Chem.GetSymmSSSR(mol)
     return mol
 
-def murcko_hist(mol, as_dict=True, show_mol_scaffold=False, no_residue_atom_as_linker=True,
-                break_three_membered_rings=True):
+def murcko_hist(mol: Mol, as_dict: bool = True, show_mol_scaffold: bool = False, 
+                no_residue_atom_as_linker: bool = True, break_three_membered_rings: bool = True) -> Union[Dict[str, int], Tuple[np.ndarray, np.ndarray]]:
+    """
+    Computes the Murcko scaffold histogram for a given molecule.
+
+    This function calculates a histogram of rings in the Murcko scaffold of the input molecule,
+    with respect to the number of adjacent rings and linkers.
+
+    Args:
+        mol (Mol): The input RDKit molecule.
+        as_dict (bool, optional): If True, return the histogram as a dictionary. Otherwise, return as numpy arrays. Defaults to True.
+        show_mol_scaffold (bool, optional): If True, display the original molecule and its Murcko scaffold. Defaults to False.
+        no_residue_atom_as_linker (bool, optional): If True, do not consider residue atoms as linkers. Defaults to True.
+        break_three_membered_rings (bool, optional): If True, break all three-membered rings before processing. Defaults to True.
+
+    Returns:
+        Union[Dict[str, int], Tuple[np.ndarray, np.ndarray]]: 
+            If as_dict is True, returns a dictionary where keys are string representations of (adjacent rings, adjacent linkers) 
+            and values are counts.
+            If as_dict is False, returns a tuple of two numpy arrays: unique (adjacent rings, adjacent linkers) pairs and their counts.
+    """
 
     if show_mol_scaffold:
+        print('Original molecule:')
         display(mol)
 
     # Break all three-membered rings
@@ -72,6 +105,7 @@ def murcko_hist(mol, as_dict=True, show_mol_scaffold=False, no_residue_atom_as_l
     # Get Murcko scaffold of `mol`
     m = MurckoScaffold.GetScaffoldForMol(mol)
     if show_mol_scaffold:
+        print('Murcko scaffold:')
         display(m)
 
     # Define set of atoms indices belonging to linkers
@@ -111,7 +145,20 @@ def murcko_hist(mol, as_dict=True, show_mol_scaffold=False, no_residue_atom_as_l
     return hist_adj
 
 
-def murcko_hists_dist(h1, h2):
+def murcko_hists_dist(h1: Dict[str, int], h2: Dict[str, int]) -> int:
+    """
+    Computes the distance between two Murcko histogram dictionaries.
+
+    The distance is calculated as the sum of absolute differences between 
+    corresponding histogram values, including keys present in only one histogram.
+
+    Args:
+        h1 (Dict[str, int]): The first Murcko histogram dictionary.
+        h2 (Dict[str, int]): The second Murcko histogram dictionary.
+
+    Returns:
+        int: The distance between the two histograms.
+    """
     dist = 0
     for k in set(h1.keys()) | set(h2.keys()):
         if k not in h1.keys():
@@ -123,28 +170,22 @@ def murcko_hists_dist(h1, h2):
     return dist
 
 
-def are_sub_hists(h1, h2, k=3, d=4):
+def are_sub_hists(h1: Dict[str, int], h2: Dict[str, int], k: int = 3, d: int = 4) -> bool:
+    """
+    Determines if two Murcko histograms are considered sub-histograms of each other.
+
+    This function checks if the histograms are equal when their sums are small,
+    or if their distance is within a specified threshold for larger histograms.
+
+    Args:
+        h1 (Dict[str, int]): The first Murcko histogram dictionary.
+        h2 (Dict[str, int]): The second Murcko histogram dictionary.
+        k (int, optional): The threshold for considering small histograms. Defaults to 3.
+        d (int, optional): The maximum allowed distance for larger histograms. Defaults to 4.
+
+    Returns:
+        bool: True if the histograms are considered sub-histograms, False otherwise.
+    """
     if min(sum(list(h1.values())), sum(list(h2.values()))) <= k:
         return h1 == h2
     return murcko_hists_dist(h1, h2) <= d
-
-
-# def to_ring_hist(h):
-#     c = Counter()
-#     for k in h.keys():
-#         c[k.split('_')[0]] += h[k]
-#     return dict(c)
-#
-#
-# def is_ring_subhist(h1, h2):
-#     h1, h2 = to_ring_hist(h1), to_ring_hist(h2)
-#     for key in h1.keys():
-#         if not key in h2.keys() or h1[key] > h2[key]:
-#             return False
-#     return True
-#
-#
-# def are_eq_murcko_hists(h1, h2, k=2):
-#     if min(sum(list(h1.values())), sum(list(h2.values()))) <= k:
-#         return h1 == h2
-#     return is_ring_subhist(h1, h2) or is_ring_subhist(h2, h1)
