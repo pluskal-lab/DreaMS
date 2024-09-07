@@ -3,9 +3,13 @@
 <!-- [![Documentation badge](https://img.shields.io/badge/docs-latest-brightgreen.svg)](https://ppiref.readthedocs.io/en/latest/?badge=latest) -->
 <!-- [![Zenodo badge](https://zenodo.org/badge/DOI/10.5281/zenodo.13208732.svg)](https://doi.org/10.5281/zenodo.13208732) -->
 <!-- [![Python package](https://github.com/anton-bushuiev/PPIRef/actions/workflows/python-package.yml/badge.svg)](https://github.com/anton-bushuiev/PPIRef/actions/workflows/python-package.yml) -->
-[![ChemRxib badge](https://img.shields.io/badge/ChemRxiv-10.26434-brown.svg)](https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f)
-[![License: MIT](https://img.shields.io/badge/License-MIT-b31b1b.svg)](https://opensource.org/licenses/MIT)
-[![License: MIT](https://img.shields.io/badge/Python-3.11-blue.svg)](https://opensource.org/licenses/MIT)
+
+<p>
+  <a href="https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f"><img src="https://img.shields.io/badge/ChemRxiv-10.26434-brown.svg" height="20px"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-b31b1b.svg" height="20px"></a>
+  <a href="https://www.python.org/downloads/release/python-3110/"><img src="https://img.shields.io/badge/Python-3.11-blue.svg" height="20px"></a>
+  <a href="https://huggingface.co/datasets/roman-bushuiev/GeMS"> <img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md-dark.svg" height="20px"></a>
+<p>
 
 <p align="center">
   <img src="assets/dreams_background.png"/>
