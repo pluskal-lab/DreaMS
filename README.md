@@ -63,16 +63,6 @@ embs = dreams_embeddings('data/examples/example_5_spectra.mgf')
 
 The resulting `embs` object is a matrix with 5 rows and 1024 columns, representing 5 1024-dimensional DreaMS representations for 5 input spectra stored in the `.mgf` file.
 
-## Work in progress
-- [ ] Wrap the repository into a pip package.
-- [ ] Import utilities to [matchms](https://github.com/matchms/matchms).
-- [x] DreaMS Atlas exploration demo.
-- [ ] Upload weights of all models.
-- [x] Provide scripts to collect/download GeMS datasets.
-- [x] Extend `dreams.api` with more functionality (e.g. attention heads analysis).
-- [x] Add tutorial notebooks.
-- [x] Upload Murcko splits and detailed tutorial notebook.
-
 ## References
 
 If you use DreaMS in your research, please cite the following paper:
