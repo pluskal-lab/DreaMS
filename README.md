@@ -1,3 +1,10 @@
+<!-- [![Documentation badge](https://img.shields.io/badge/docs-latest-brightgreen.svg)](https://ppiref.readthedocs.io/en/latest/?badge=latest) -->
+<!-- [![Zenodo badge](https://zenodo.org/badge/DOI/10.5281/zenodo.13208732.svg)](https://doi.org/10.5281/zenodo.13208732) -->
+<!-- [![Python package](https://github.com/anton-bushuiev/PPIRef/actions/workflows/python-package.yml/badge.svg)](https://github.com/anton-bushuiev/PPIRef/actions/workflows/python-package.yml) -->
+[![ChemRxib badge](https://img.shields.io/badge/ChemRxiv-10.26434-brown.svg)](https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f)
+[![License: MIT](https://img.shields.io/badge/License-MIT-firebrick.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/Python-3.11-blue.svg)](https://opensource.org/licenses/MIT)
+
 <h1 align="center">DreaMS (Deep Representations Empowering the Annotation of Mass Spectra)</h1>
 
 <p align="center">
