@@ -34,7 +34,7 @@ python3 training/train.py \
  --model DreaMS \
  --ff_peak_depth 1 \
  --ff_fourier_depth 5 \
- --ff_fourier_d 74 \
+ --ff_fourier_d 512 \
  --ff_out_depth 1 \
  --prec_intens 1.1 \
  --num_devices 8 \
