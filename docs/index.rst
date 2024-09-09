@@ -28,10 +28,11 @@ Contents
 
 .. toctree::
    :maxdepth: 2
-   :caption: Advanced
+   :caption: Advanced tutorials
 
    tutorials/constructing_gems
    tutorials/murcko_hist_split
+   tutorials/pre_training
 
 .. toctree::
    :maxdepth: 2

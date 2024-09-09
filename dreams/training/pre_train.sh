@@ -16,10 +16,11 @@ $(python -c "from dreams.definitions import export; export()")
 # Move to running dir
 cd "${DREAMS_DIR}" || exit 3
 
-job_key="12345"
+job_key="my_pre_training_run"
 
 # Run the training script
-# srun --export=ALL --preserve-env python3 training/train.py \
+# Replace `python3 training/train.py` with `srun --export=ALL --preserve-env python3 training/train.py \`
+# when executing on a SLURM cluster via `sbatch`.
 python3 training/train.py \
  --project_name SSL_VAL_4.0 \
  --job_key "${job_key}" \
