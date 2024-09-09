@@ -13,7 +13,7 @@
 <p>
 
 <p align="center">
-  <img src="assets/dreams_background.png"/>
+  <img src="https://raw.githubusercontent.com/pluskal-lab/DreaMS/b577db12bc8ec0c2010d10854f528007fcc2db2d/assets/dreams_background.png"/>
 </p>
 
 DreaMS (Deep Representations Empowering the Annotation of Mass Spectra) is a transformer-based neural network designed to interpret tandem mass spectrometry (MS/MS) data. Pre-trained in a self-supervised way on millions of unannotated spectra from our new GeMS (GNPS Experimental Mass Spectra) dataset, DreaMS acquires rich molecular representations by predicting masked spectral peaks and chromatographic retention orders. When fine-tuned for tasks such as spectral similarity, chemical properties prediction, and fluorine detection, DreaMS achieves state-of-the-art performance across various mass spectrometry interpretation tasks. The DreaMS Atlas, a comprehensive molecular network comprising 201 million MS/MS spectra annotated with DreaMS representations, along with pre-trained models and training datasets, is publicly accessible for further research and development. 🚀
