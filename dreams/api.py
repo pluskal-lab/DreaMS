@@ -121,29 +121,34 @@ def dreams_predictions(
     # TODO: consider model name
     if not title:
         title = 'DreaMS_prediction'
-    preds = None
+
+    # Preallocate memory for predictions
+    num_samples = len(spectra)
+    output_shape = model(next(iter(dataloader))[SPECTRUM].to(device=model.device, dtype=model.dtype)).shape[1:]
+    preds = torch.zeros((num_samples, *output_shape), dtype=model.dtype)
+
     progress_bar = tqdm(
-        total=len(spectra),
+        total=num_samples,
         desc='Computing ' + title.replace('_', ' '),
         disable=not progress_bar,
         file=tqdm_logger if write_log else None
     )
-    for i, batch in enumerate(dataloader):
+
+    start_idx = 0
+    for batch in dataloader:
         with torch.inference_mode():
             pred = model(batch[SPECTRUM].to(device=model.device, dtype=model.dtype))
 
             # Store predictions to cpu to avoid high memory allocation issues
-            pred = pred.cpu()
-            if preds is None:
-                preds = pred
-            else:
-                preds = torch.cat([preds, pred])
+            batch_size = pred.shape[0]
+            preds[start_idx:start_idx + batch_size] = pred.cpu()
+            start_idx += batch_size
 
             # Update the progress bar by the number of samples in the current batch
-            progress_bar.update(len(batch[SPECTRUM]))
+            progress_bar.update(batch_size)
     progress_bar.close()
 
-    preds = preds.squeeze().cpu().numpy()
+    preds = preds.squeeze().numpy()
 
     return preds
 
