@@ -930,7 +930,10 @@ def merge_lcmsms_hdf5s(
 
     os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'  # Needed to avoid huge file closing bug from h5py
 
-    if isinstance(in_pths, Path) and in_pths.is_dir():
+    if not isinstance(in_pths, Path):
+        in_pths = Path(in_pths)
+
+    if in_pths.is_dir():
         in_pths = in_pths.glob('*.hdf5')
 
     dformat_filters = dformats.DataFormatBuilder(dformat).get_dformat()
@@ -938,63 +941,70 @@ def merge_lcmsms_hdf5s(
     f_out = h5py.File(out_pth, 'w')
     first_file = True
     for in_pth in tqdm(list(in_pths), desc='Merging .hdf5 files', disable=not verbose):
-        with h5py.File(in_pth, 'r') as f_in:
+        try:
+            with h5py.File(in_pth, 'a') as f_in:
 
-            # Check that the input file has a correct order of spectra and enough number of spectra
-            n_spectra = f_in['MSn data']['mzs'].shape[0]
-            if not f_in.attrs['Ordered RT']:
-                continue
-            if n_spectra < dformat_filters.min_file_spectra:
-                continue
+                # Check that the input file has a correct order of spectra and enough number of spectra
+                n_spectra = f_in['MSn data']['mzs'].shape[0]
+                if not f_in.attrs['Ordered RT']:
+                    continue
+                if n_spectra < dformat_filters.min_file_spectra:
+                    continue
 
-            # Compute dformats for MS/MS spectra if needed
-            if 'dformat' not in f_in['MSn data']:
-                # TODO: calculate here if not present
-                # TODO: in dformat calculation report invoked filters for further logging
-                raise NotImplementedError('No dformat in the input file.')
+                # Compute dformats for MS/MS spectra if needed
+                if 'dformat' not in f_in['MSn data']:
+                    # TODO: in dformat calculation report invoked filters for further logging
+                    # Calculate dformat if not present
+                    dformat_array = np.empty(n_spectra, dtype=h5py.string_dtype())
+                    specs = np.stack([f_in['MSn data']['mzs'][:], f_in['MSn data']['intensities'][:]], axis=1)
+                    prec_mzs = f_in['MSn data']['precursor mz'][:]
+                    for i in range(n_spectra):
+                        dformat_array[i] = dformats.assign_dformat(specs[i], prec_mz=prec_mzs[i])
+                    f_in['MSn data'].create_dataset('dformat', data=dformat_array)
 
-            # Subset spectra accordign to the dformat
-            idx = np.where(f_in['MSn data']['dformat'][:].astype(str) == dformat)[0]
-            n_spectra = idx.shape[0]
+                # Subset spectra accordign to the dformat
+                idx = np.where(f_in['MSn data']['dformat'][:].astype(str) == dformat)[0]
+                n_spectra = idx.shape[0]
 
-            # Check that the input file has enough spectra after subsetting
-            if idx.shape[0] < dformat_filters.min_file_spectra:
-                continue
+                # Check that the input file has enough spectra after subsetting
+                if idx.shape[0] < dformat_filters.min_file_spectra:
+                    continue
 
-            # Trim or pad spectra to the maximum number of peaks
-            spectra = np.stack([f_in['MSn data']['mzs'][:][idx], f_in['MSn data']['intensities'][:][idx]], axis=1)
-            if spectra.shape[2] > dformat_filters.max_peaks_n:
-                spectra = su.trim_peak_list(spectra, dformat_filters.max_peaks_n)
-            elif spectra.shape[2] < dformat_filters.max_peaks_n:
-                spectra = su.pad_peak_list(spectra, dformat_filters.max_peaks_n)
+                # Trim or pad spectra to the maximum number of peaks
+                spectra = np.stack([f_in['MSn data']['mzs'][:][idx], f_in['MSn data']['intensities'][:][idx]], axis=1)
+                if spectra.shape[2] > dformat_filters.max_peaks_n:
+                    spectra = su.trim_peak_list(spectra, dformat_filters.max_peaks_n)
+                elif spectra.shape[2] < dformat_filters.max_peaks_n:
+                    spectra = su.pad_peak_list(spectra, dformat_filters.max_peaks_n)
 
-            # Define datasets to store
-            datasets = [
-                (SPECTRUM, spectra, f_in['MSn data']['mzs'].dtype),
-                (FILE_NAME, [in_pth.stem] * n_spectra, h5py.string_dtype())
-            ]
-            datasets.extend(
-                [(n, f_in['MSn data'][n][:][idx], f_in['MSn data'][n].dtype) for n in [CHARGE, PRECURSOR_MZ, RT]]
-            )
-            if store_acc_est:
-                datasets.append(
-                    ('instrument accuracy est.', np.repeat(f_in.attrs['TBXICs median stdev'], n_spectra), np.float32)
+                # Define datasets to store
+                datasets = [
+                    (SPECTRUM, spectra, f_in['MSn data']['mzs'].dtype),
+                    (FILE_NAME, [in_pth.stem] * n_spectra, h5py.string_dtype())
+                ]
+                datasets.extend(
+                    [(n, f_in['MSn data'][n][:][idx], f_in['MSn data'][n].dtype) for n in [CHARGE, 'precursor mz', RT]]
                 )
-
-            # Store datasets in the output file
-            for name, data, dtype in datasets:
-                if first_file:
-                    f_out.create_dataset(
-                        name, data=data, shape=data.shape if isinstance(data, np.ndarray) else (len(data),),
-                        maxshape=(None, *data.shape[1:]) if isinstance(data, np.ndarray) else (None,),
-                        dtype=dtype
+                if store_acc_est:
+                    datasets.append(
+                        ('instrument accuracy est.', np.repeat(f_in.attrs['TBXICs median stdev'], n_spectra), np.float32)
                     )
-                else:
-                    data_len = data.shape[0] if isinstance(data, np.ndarray) else len(data)
-                    f_out[name].resize(f_out[name].shape[0] + data_len, axis=0)
-                    f_out[name][-data_len:] = data
-            first_file = False
 
+                # Store datasets in the output file
+                for name, data, dtype in datasets:
+                    if first_file:
+                        f_out.create_dataset(
+                            name, data=data, shape=data.shape if isinstance(data, np.ndarray) else (len(data),),
+                            maxshape=(None, *data.shape[1:]) if isinstance(data, np.ndarray) else (None,),
+                            dtype=dtype
+                        )
+                    else:
+                        data_len = data.shape[0] if isinstance(data, np.ndarray) else len(data)
+                        f_out[name].resize(f_out[name].shape[0] + data_len, axis=0)
+                        f_out[name][-data_len:] = data
+                first_file = False
+        except:
+            print(f'Skipping {f_in}.')
 
 
 
@@ -1135,22 +1145,16 @@ def suppress_output():
         sys.stdout, sys.stderr = old_stdout, old_stderr
 
 
-def wandb_import(project_name, entity_name='roman-bushuiev', tags={}, run_name_suffix=None, block_list_names=[],
-                 include_list_names=[]):
+def wandb_import(project_name, entity_name='roman-bushuiev', tags={}, run_name_suffixes=None):
+    if isinstance(run_name_suffixes, str):
+        run_name_suffixes = [run_name_suffixes]
     api = wandb.Api()
     val_dfs = []
     cfgs = []
     for r in tqdm(api.runs(entity_name + '/' + project_name, include_sweeps=False)):
-        if run_name_suffix not in r.name: #not r.name in include_list_names:
-            continue
-            # if tags and not set(r.tags).intersection(tags):
-            #     continue
-            # if run_name_suffix and run_name_suffix not in r.name:
-            #     continue
-            # if r.name in block_list_names:
-            #     continue
-        cfgs.append(r.config)
-        val_dfs.append(pd.DataFrame(list(r.scan_history())))
+        if any([s in r.name for s in run_name_suffixes]):
+            cfgs.append(r.config)
+            val_dfs.append(pd.DataFrame(list(r.scan_history())))
     cfgs = pd.DataFrame(cfgs)
     return val_dfs, cfgs
 
