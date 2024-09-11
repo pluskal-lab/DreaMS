@@ -34,13 +34,13 @@ Please refer our [documentation](https://dreams-docs.readthedocs.io/) and paper 
 
 ## Getting started
 
-
 ### Installation
 Run the following code from the command line.
 
 ``` shell
 # Download this repository
-git clone https://github.com/pluskal-lab/DreaMS.git; cd DreaMS
+git clone https://github.com/pluskal-lab/DreaMS.git
+cd DreaMS
 
 # Create conda environment
 conda create -n dreams python==3.11.0 --yes
@@ -64,6 +64,11 @@ embs = dreams_embeddings('data/examples/example_5_spectra.mgf')
 The resulting `embs` object is a matrix with 5 rows and 1024 columns, representing 5 1024-dimensional DreaMS representations for 5 input spectra stored in the `.mgf` file.
 
 ## References
+
+- Paper: [https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f](https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f).
+- Documentation and tutorials: [https://dreams-docs.readthedocs.io/](https://dreams-docs.readthedocs.io/).
+- Hugging Face Hub with GeMS dataset and DreaMS Atlas: [https://huggingface.co/roman-bushuiev/GeMS](https://huggingface.co/roman-bushuiev/GeMS).
+- Weights of pre-trained models: [https://zenodo.org/record/TODO](https://zenodo.org/record/TODO).
 
 If you use DreaMS in your research, please cite the following paper:
 
