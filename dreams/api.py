@@ -77,7 +77,7 @@ class PreTrainedModel:
 
 def dreams_predictions(
         model_ckpt: T.Union[PreTrainedModel, FineTuningHead, DreaMSModel, Path, str],
-        spectra: T.Union[Path, str],
+        spectra: T.Union[Path, str, du.MSData],
         model_cls=None,
         batch_size=32,
         progress_bar=True,
