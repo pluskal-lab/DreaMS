@@ -644,7 +644,7 @@ class PeakListModifiedCosine:
     def __call__(self, spec1: np.ndarray, spec2: np.ndarray, prec_mz1: float, prec_mz2: float) -> float:
         return self.compute(spec1, spec2, prec_mz1, prec_mz2)
 
-    def compute_pairwise(self, specs: np.ndarray, prec_mzs: np.ndarray, avg=True) -> Union[np.ndarray, float]:
+    def compute_pairwise(self, specs: np.ndarray, prec_mzs: np.ndarray, avg=False) -> Union[np.ndarray, float]:
         specs = [self._peak_list_to_matchms(spec, float(prec_mz)) for spec, prec_mz in zip(specs, prec_mzs)]
         sims = self.cos_sim.matrix(specs, specs, is_symmetric=True)['score']
         if avg:
