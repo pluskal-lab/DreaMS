@@ -81,9 +81,9 @@ def dreams_predictions(
         model_cls=None,
         batch_size=32,
         progress_bar=True,
-        write_log=False,
         n_highest_peaks=None,
         title='',
+        logger_pth=None,
         **msdata_kwargs
     ):
 
@@ -105,16 +105,21 @@ def dreams_predictions(
     spec_preproc = du.SpectrumPreprocessor(dformat=dformats.DataFormatA(), n_highest_peaks=model_ckpt.n_highest_peaks)
 
     # Load a dataset of spectra
-    if isinstance(spectra, str):
-        spectra = Path(spectra)
-    spectra_pth = spectra
-
-    msdata = du.MSData.load(spectra, **msdata_kwargs)
+    if not isinstance(spectra, du.MSData):
+        if isinstance(spectra, str):
+            spectra = Path(spectra)
+        msdata = du.MSData.load(spectra, **msdata_kwargs)
+    else:
+        msdata = spectra
     spectra = msdata.to_torch_dataset(spec_preproc)
     dataloader = DataLoader(spectra, batch_size=batch_size, shuffle=False, drop_last=False)
 
-    logger = io.setup_logger(spectra_pth.with_suffix('.log'))
-    tqdm_logger = io.TqdmToLogger(logger)
+    # Setup logger writing progress to a file
+    if logger_pth:
+        logger = io.setup_logger(logger_pth)
+        tqdm_logger = io.TqdmToLogger(logger)
+    else:
+        write_log = False
 
     # Compute predictions
     model = model_ckpt.model
@@ -131,7 +136,7 @@ def dreams_predictions(
         total=num_samples,
         desc='Computing ' + title.replace('_', ' '),
         disable=not progress_bar,
-        file=tqdm_logger if write_log else None
+        file=tqdm_logger if logger_pth else None
     )
 
     start_idx = 0
