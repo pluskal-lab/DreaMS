@@ -483,19 +483,23 @@ def plot_spectrum(
     else:
         colors = ['blue', 'green', 'red']
 
-    # Check if spectrum has correct shape and transpose if necessary
-    if len(spec.shape) != 2:
-        raise ValueError('Spectrum must have shape (2, num_peaks) or (num_peaks, 2).')
-    if spec.shape[0] != 2:
-        spec = spec.T
+    def process_spectrum(s):
+        # Check if spectrum has correct shape and transpose if necessary
+        if len(s.shape) != 2:
+            raise ValueError('Spectrum must have shape (2, num_peaks) or (num_peaks, 2).')
+        if s.shape[0] != 2:
+            s = s.T
 
-    # Unpad peak list
-    spec = unpad_peak_list(spec)
+        # Unpad peak list
+        s = unpad_peak_list(s)
 
-    # Normalize input spectrum
-    if normalize_intensities:
-        spec = to_rel_intensity(spec, scale_factor=100.0)
-    mzs, ins = spec
+        # Normalize input spectrum
+        if normalize_intensities:
+            s = to_rel_intensity(s, scale_factor=100.0)
+
+        return s
+
+    mzs, ins = process_spectrum(spec)
 
     # Initialize plotting
     init_plotting(figsize=figsize)
@@ -523,7 +527,7 @@ def plot_spectrum(
 
     # Plot mirror spectrum
     if mirror_spec is not None:
-        mzs_m, ins_m = norm_spec(mirror_spec)
+        mzs_m, ins_m = process_spectrum(mirror_spec)
 
         @ticker.FuncFormatter
         def major_formatter(x, pos):
