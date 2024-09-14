@@ -11,14 +11,14 @@ job_key=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 10 ; echo '')
 
 # Submit
 job_id=$(qsub \
-  -A "${PROJECT_ID_TOMAS_SOUCEK}" \
-  -q qnvidia \
+  -A "${PROJECT_ID}" \
+  -q qgpu \
   -l walltime=24:00:00 \
   -o "${outdir}/${job_key}"_stdout.txt \
   -e "${outdir}/${job_key}"_errout.txt \
   -N "${job_key}" \
   -v job_key="${job_key}" \
-  "${train_dir}/fine_tune_karolina.sh"
+  "${train_dir}/fine_tune.sh"
 )
 
 # Log
