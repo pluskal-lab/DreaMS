@@ -25,10 +25,34 @@ from dreams.definitions import *
 
 
 class FineTuningHead(pl.LightningModule):
+    """
+    Base class for fine-tuning heads in the DreaMS model.
+
+    This class provides a foundation for creating various fine-tuning heads
+    that can be attached to a pre-trained DreaMS backbone for specific tasks.
+
+    Attributes:
+        backbone (Union[DreaMS, pl.LightningModule]): The pre-trained backbone model.
+        lr (float): Learning rate for the optimizer.
+        weight_decay (float): Weight decay for the optimizer.
+        precursor_emb (bool): Whether to use precursor embeddings.
+        unfreeze_backbone_at_epoch (int): Epoch at which to unfreeze the backbone.
+        head (nn.Module): The fine-tuning head (to be implemented in subclasses).
+    """
 
     def __init__(self, backbone: Union[Path, DreaMS], lr, weight_decay, backbone_cls=DreaMS, unfreeze_backbone_at_epoch=0,
                  precursor_emb=True):
+        """
+        Initialize the FineTuningHead.
 
+        Args:
+            backbone (Union[Path, DreaMS]): Path to the pre-trained backbone or the backbone itself.
+            lr (float): Learning rate for the optimizer.
+            weight_decay (float): Weight decay for the optimizer.
+            backbone_cls (type): Class of the backbone model (default: DreaMS).
+            unfreeze_backbone_at_epoch (int): Epoch at which to unfreeze the backbone (default: 0).
+            precursor_emb (bool): Whether to use only precursor embeddings (default: True).
+        """
         super(FineTuningHead, self).__init__()
         self.save_hyperparameters()
 
@@ -47,7 +71,17 @@ class FineTuningHead(pl.LightningModule):
         self.head = NotImplementedError('Fine tuning head must be implemented in the child subclass.')
 
     def forward(self, spec, charge=None, no_head=False):
+        """
+        Forward pass through the model.
 
+        Args:
+            spec (torch.Tensor): Input spectrum.
+            charge (torch.Tensor, optional): Charge information.
+            no_head (bool): If True, return embeddings without passing through the head.
+
+        Returns:
+            torch.Tensor: Output of the model.
+        """
         # Get backbone embeddings
         embs = self.backbone(spec, charge)
 
@@ -62,22 +96,63 @@ class FineTuningHead(pl.LightningModule):
 
     @abstractmethod
     def step(self, data, batch_idx):
+        """
+        Perform a single step (to be implemented in subclasses).
+
+        Args:
+            data (dict): Input data.
+            batch_idx (int): Index of the current batch.
+
+        Returns:
+            tuple: Predicted labels and loss.
+        """
         pass
 
     def training_step(self, data, batch_idx):
+        """
+        Perform a single training step.
+
+        Args:
+            data (dict): Input data.
+            batch_idx (int): Index of the current batch.
+
+        Returns:
+            torch.Tensor: The computed loss.
+        """
         _, loss = self.step(data, batch_idx)
         self.log('Train loss', loss, sync_dist=True)
         return loss
 
     def validation_step(self, data, batch_idx, dataloader_idx=0):
+        """
+        Perform a single validation step.
+
+        Args:
+            data (dict): Input data.
+            batch_idx (int): Index of the current batch.
+            dataloader_idx (int): Index of the dataloader.
+
+        Returns:
+            torch.Tensor: The computed loss.
+        """
         label_pred, loss = self.step(data, batch_idx)
         self.log('Val loss', loss, sync_dist=True)
         return loss
 
     def configure_optimizers(self):
+        """
+        Configure the optimizer for the model.
+
+        Returns:
+            torch.optim.Optimizer: The configured optimizer.
+        """
         return torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
 
     def on_train_epoch_start(self):
+        """
+        Callback method called at the start of each training epoch.
+        Handles freezing/unfreezing of the backbone.
+        """
         if self.trainer.current_epoch == self.unfreeze_backbone_at_epoch:
             self.backbone.unfreeze()
         elif self.trainer.current_epoch == 0:
@@ -94,6 +169,19 @@ class FineTuningHead(pl.LightningModule):
         log: bool = True,
         log_n_samples: bool = False
     ) -> None:
+        """
+        Update a metric and optionally log it.
+
+        Args:
+            name (str): Name of the metric.
+            metric_class (type[Metric]): Class of the metric.
+            update_args (Any): Arguments to update the metric.
+            batch_size (int, optional): Batch size for logging.
+            prog_bar (bool): Whether to show the metric in the progress bar.
+            metric_kwargs (dict, optional): Additional keyword arguments for the metric.
+            log (bool): Whether to log the metric.
+            log_n_samples (bool): Whether to log the number of samples.
+        """
         # Log total number of samples for debugging
         if log_n_samples:
             self._update_metric(
@@ -129,6 +217,20 @@ class FineTuningHead(pl.LightningModule):
             )
 
     def _plot_curve(self, x, y, threshold=None, name='', xaxis_range=(0, 1), yaxis_range=(0, 1)):
+        """
+        Plot a curve using plotly.
+
+        Args:
+            x (array-like): X-axis values.
+            y (array-like): Y-axis values.
+            threshold (float, optional): Threshold value to plot.
+            name (str): Name of the curve.
+            xaxis_range (tuple): Range for x-axis.
+            yaxis_range (tuple): Range for y-axis.
+
+        Returns:
+            go.Figure: The plotly figure object.
+        """
         fig = go.Figure()
 
         # Curve
@@ -139,20 +241,38 @@ class FineTuningHead(pl.LightningModule):
         fig.update_layout(xaxis_range=xaxis_range)
         fig.update_layout(yaxis_range=yaxis_range)
 
-        # Add diagonal reference line
-        # fig.add_trace(go.Scatter(x=[0, 1], y=[0, 1],
-        #                         mode='lines',
-        #                         name='Random Guessing',
-        #                         line=dict(color='black', dash='dash')))
-        # fig.update_layout(autosize=False, width=500, height=500)
-
         return fig
 
 
 class RegressionHead(FineTuningHead):
+    """
+    Regression head for fine-tuning tasks.
+
+    This class implements a regression head that can be used for various
+    regression tasks on top of the DreaMS backbone.
+
+    Attributes:
+        head (nn.Module): The regression head module.
+        out_dim (int): Output dimension of the regression.
+        sigmoid (nn.Module): Sigmoid activation (if used).
+        mol_props_calc (mu.MolPropertyCalculator): Calculator for molecular properties.
+    """
 
     def __init__(self, backbone: Union[Path, DreaMS], lr, weight_decay, sigmoid=True, out_dim=1,
                  mol_props_calc: mu.MolPropertyCalculator = None, head_depth=1, dropout=0):
+        """
+        Initialize the RegressionHead.
+
+        Args:
+            backbone (Union[Path, DreaMS]): Path to the pre-trained backbone or the backbone itself.
+            lr (float): Learning rate for the optimizer.
+            weight_decay (float): Weight decay for the optimizer.
+            sigmoid (bool): Whether to use sigmoid activation (default: True).
+            out_dim (int): Output dimension of the regression (default: 1).
+            mol_props_calc (mu.MolPropertyCalculator, optional): Calculator for molecular properties.
+            head_depth (int): Depth of the regression head (default: 1).
+            dropout (float): Dropout rate (default: 0).
+        """
         super().__init__(backbone=backbone, lr=lr, weight_decay=weight_decay)
         self.head = FeedForward(in_dim=self.backbone.d_model, out_dim=out_dim, depth=head_depth, act_last=False,
                                 hidden_dim=self.backbone.d_model, dropout=dropout)
@@ -161,6 +281,16 @@ class RegressionHead(FineTuningHead):
         self.mol_props_calc = mol_props_calc
 
     def step(self, data, batch_idx):
+        """
+        Perform a single step of regression.
+
+        Args:
+            data (dict): Input data.
+            batch_idx (int): Index of the current batch.
+
+        Returns:
+            tuple: Predicted labels and loss.
+        """
         label_pred = self(data['spec'], data['charge'])
         if self.sigmoid:
             label_pred = self.sigmoid(label_pred)
@@ -172,6 +302,17 @@ class RegressionHead(FineTuningHead):
         return label_pred, loss
 
     def validation_step(self, data, batch_idx, dataloader_idx=0):
+        """
+        Perform a single validation step.
+
+        Args:
+            data (dict): Input data.
+            batch_idx (int): Index of the current batch.
+            dataloader_idx (int): Index of the dataloader.
+
+        Returns:
+            torch.Tensor: The computed loss.
+        """
         label_pred, loss = self.step(data, batch_idx)
         self.log('Val loss', loss, sync_dist=True)
 
@@ -186,11 +327,38 @@ class RegressionHead(FineTuningHead):
 
 
 class IntRegressionHead(RegressionHead):
+    """
+    Integer Regression head for fine-tuning tasks.
+
+    This class implements a regression head specifically for integer-valued outputs.
+
+    Attributes:
+        Inherits all attributes from RegressionHead.
+    """
 
     def __init__(self, backbone_pth: Path, lr, weight_decay, out_dim=1):
+        """
+        Initialize the IntRegressionHead.
+
+        Args:
+            backbone_pth (Path): Path to the pre-trained backbone.
+            lr (float): Learning rate for the optimizer.
+            weight_decay (float): Weight decay for the optimizer.
+            out_dim (int): Output dimension of the regression (default: 1).
+        """
         super().__init__(backbone_pth=backbone_pth, lr=lr, weight_decay=weight_decay, sigmoid=False, out_dim=out_dim)
 
     def validation_step(self, data, batch_idx):
+        """
+        Perform a single validation step.
+
+        Args:
+            data (dict): Input data.
+            batch_idx (int): Index of the current batch.
+
+        Returns:
+            torch.Tensor: The computed loss.
+        """
         label_pred, loss = self.step(data, batch_idx)
         self.log('val_loss', loss, sync_dist=True)
         self.log('MAE', F.l1_loss(label_pred.squeeze(), data['label']).item(), sync_dist=True)
@@ -199,9 +367,33 @@ class IntRegressionHead(RegressionHead):
 
 
 class BinClassificationHead(FineTuningHead):
+    """
+    Binary Classification head for fine-tuning tasks.
+
+    This class implements a binary classification head that can be used for
+    various classification tasks on top of the DreaMS backbone.
+
+    Attributes:
+        head (nn.Module): The classification head module.
+        metrics (dict): Dictionary to store various classification metrics.
+        loss (nn.Module): The loss function (Focal Loss).
+    """
 
     def __init__(self, backbone_pth: Path, lr, weight_decay, head_depth=1, head_phi_depth=0, dropout=0,
                  focal_loss_alpha=None, focal_loss_gamma=0):
+        """
+        Initialize the BinClassificationHead.
+
+        Args:
+            backbone_pth (Path): Path to the pre-trained backbone.
+            lr (float): Learning rate for the optimizer.
+            weight_decay (float): Weight decay for the optimizer.
+            head_depth (int): Depth of the classification head (default: 1).
+            head_phi_depth (int): Depth of the phi network in DeepSets (default: 0).
+            dropout (float): Dropout rate (default: 0).
+            focal_loss_alpha (float, optional): Alpha parameter for Focal Loss.
+            focal_loss_gamma (float): Gamma parameter for Focal Loss (default: 0).
+        """
         super().__init__(backbone=backbone_pth, lr=lr, weight_decay=weight_decay, precursor_emb=head_phi_depth == 0)
         self.head = nn.Sequential(nn.Linear(self.backbone.d_model, 1), nn.Sigmoid())
         self.metrics = {}
@@ -242,11 +434,31 @@ class BinClassificationHead(FineTuningHead):
             )
 
     def step(self, data, batch_idx):
+        """
+        Perform a single step of computation.
+
+        Args:
+            data (dict): A dictionary containing the input data.
+            batch_idx (int): The index of the current batch.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: A tuple containing the predicted labels and the loss.
+        """
         label_pred = self(data['spec'], data['charge'])
         loss = self.loss(label_pred.squeeze(), data['label'])
         return label_pred, loss
 
     def training_step(self, data, batch_idx):
+        """
+        Perform a single training step.
+
+        Args:
+            data (dict): A dictionary containing the input data.
+            batch_idx (int): The index of the current batch.
+
+        Returns:
+            torch.Tensor: The computed loss for this step.
+        """
         label_pred, loss = self.step(data, batch_idx)
         self.log('Train loss', loss, sync_dist=True)
         self.train_acc(label_pred.squeeze(), data['label'])
@@ -264,6 +476,17 @@ class BinClassificationHead(FineTuningHead):
         return loss
 
     def validation_step(self, data, batch_idx, dataloader_idx=0):
+        """
+        Perform a single validation step.
+
+        Args:
+            data (dict): A dictionary containing the input data.
+            batch_idx (int): The index of the current batch.
+            dataloader_idx (int, optional): The index of the dataloader. Defaults to 0.
+
+        Returns:
+            torch.Tensor: The computed loss for this step.
+        """
         label_pred, loss = self.step(data, batch_idx)
 
         self.log('Val loss', loss, sync_dist=True, add_dataloader_idx=False)
@@ -300,6 +523,10 @@ class BinClassificationHead(FineTuningHead):
         return loss
 
     def on_validation_epoch_end(self):
+        """
+        Perform operations at the end of each validation epoch.
+        This method computes and logs ROC and PR curves.
+        """
 
         # ROC curve
         name = f'val_roc'
@@ -335,6 +562,24 @@ class FingerprintHead(FineTuningHead):
     def __init__(self, backbone: Path, fp_str: str, lr, batch_size, weight_decay, dropout=0, loss='cos',
                  retrieval_val_pth=None, retrieval_epoch_freq=10, unfreeze_backbone_at_epoch=0,
                  head_depth=1, store_val_out_dir: Path = None, head_phi_depth: int = 0):
+        """
+        Initialize the FingerprintHead.
+
+        Args:
+            backbone (Path): Path to the pre-trained backbone.
+            fp_str (str): String representation of the fingerprint.
+            lr (float): Learning rate.
+            batch_size (int): Batch size.
+            weight_decay (float): Weight decay for optimization.
+            dropout (float, optional): Dropout rate. Defaults to 0.
+            loss (str, optional): Loss function to use. Defaults to 'cos'.
+            retrieval_val_pth (Path, optional): Path for validation retrieval. Defaults to None.
+            retrieval_epoch_freq (int, optional): Frequency of retrieval validation. Defaults to 10.
+            unfreeze_backbone_at_epoch (int, optional): Epoch to unfreeze the backbone. Defaults to 0.
+            head_depth (int, optional): Depth of the head. Defaults to 1.
+            store_val_out_dir (Path, optional): Directory to store validation outputs. Defaults to None.
+            head_phi_depth (int, optional): Depth of the phi network in DeepSets. Defaults to 0.
+        """
         super().__init__(backbone=backbone, lr=lr, weight_decay=weight_decay, precursor_emb=not head_phi_depth,
                          unfreeze_backbone_at_epoch=unfreeze_backbone_at_epoch)
 
@@ -390,11 +635,32 @@ class FingerprintHead(FineTuningHead):
         self.val_metrics = FingerprintMetrics(prefix='Val')
 
     def step(self, data, batch_idx):
+        """
+        Perform a single step of computation.
+
+        Args:
+            data (dict): A dictionary containing the input data.
+            batch_idx (int): The index of the current batch.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: A tuple containing the predictions and the loss.
+        """
         pred = self(data['spec'], data['charge'])
         loss = self.loss(pred, data['label'])
         return pred, loss
 
     def validate(self, data, batch_idx, dataloader_idx):
+        """
+        Perform validation computations.
+
+        Args:
+            data (dict): A dictionary containing the input data.
+            batch_idx (int): The index of the current batch.
+            dataloader_idx (int): The index of the dataloader.
+
+        Returns:
+            torch.Tensor: The computed loss for this validation step.
+        """
         pred, loss = self.step(data, batch_idx)
         real = data['label']
 
@@ -419,12 +685,33 @@ class FingerprintHead(FineTuningHead):
         return loss
 
     def __retrieval_epoch(self) -> bool:
+        """
+        Check if the current epoch is a retrieval epoch.
+
+        Returns:
+            bool: True if it's a retrieval epoch, False otherwise.
+        """
         return self.retrieval_val_pth and self.current_epoch % self.retrieval_epoch_freq == 0 and self.current_epoch != 0
 
     def validation_step(self, data, batch_idx, dataloader_idx=0):
+        """
+        Perform a single validation step.
+
+        Args:
+            data (dict): A dictionary containing the input data.
+            batch_idx (int): The index of the current batch.
+            dataloader_idx (int, optional): The index of the dataloader. Defaults to 0.
+
+        Returns:
+            torch.Tensor: The computed loss for this validation step.
+        """
         return self.validate(data, batch_idx, dataloader_idx)
 
     def on_validation_epoch_end(self):
+        """
+        Perform operations at the end of each validation epoch.
+        This method computes and logs retrieval metrics if it's a retrieval epoch.
+        """
         if self.__retrieval_epoch():
             if self.val_retrieval.n_retrievals > 0:
                 metrics_avg, metrics = self.val_retrieval.compute_reset_metrics('Val', return_unaveraged=True)
@@ -440,6 +727,15 @@ class FingerprintHead(FineTuningHead):
 
 class ContrastiveHead(FineTuningHead):
     def __init__(self, backbone_pth: Path, lr, weight_decay, triplet_loss_margin: float):
+        """
+        Initialize the ContrastiveHead.
+
+        Args:
+            backbone_pth (Path): Path to the pre-trained backbone.
+            lr (float): Learning rate.
+            weight_decay (float): Weight decay for optimization.
+            triplet_loss_margin (float): Margin for the triplet loss.
+        """
         super().__init__(backbone_pth, lr, weight_decay, precursor_emb=True)
         self.head = nn.Linear(self.backbone.d_model, self.backbone.d_model, bias=True)
 
@@ -447,6 +743,16 @@ class ContrastiveHead(FineTuningHead):
         self.triplet_loss_margin = triplet_loss_margin
 
     def step(self, data, batch_idx):
+        """
+        Perform a single step of computation.
+
+        Args:
+            data (dict): A dictionary containing the input data.
+            batch_idx (int): The index of the current batch.
+
+        Returns:
+            Tuple[None, torch.Tensor]: A tuple containing None and the computed loss.
+        """
         # TODO: extend for more than 1 positive example? (current -cos_sim_pos + ... will not work)
         # TODO: t
         # TODO: DeepSets head (change shape comments)
@@ -494,39 +800,3 @@ class ContrastiveHead(FineTuningHead):
         _, loss = self.step(data, batch_idx)
         self.log('Val loss', loss, sync_dist=True)
         return loss
-
-    def on_validation_epoch_end(self):
-
-        if self.trainer.current_epoch % 2 == 0:
-
-            from dreams.inference.inference import get_dreams_predictions, get_dreams_embeddings
-
-            # AUROC
-            df_pth = EXPERIMENTS_DIR / 'spec_sim/data/spec_retrieval_20k.pkl'
-            df_res = pd.read_pickle(df_pth)
-            dreams_embs_i = get_dreams_predictions(self, df_res, spec_col='PARSED PEAKS i', prec_mz_col='PRECURSOR M/Z i',
-                                                   batch_size=32, model_cls=ContrastiveHead, tqdm_batches=False)
-            dreams_embs_j = get_dreams_predictions(self, df_res, spec_col='PARSED PEAKS j', prec_mz_col='PRECURSOR M/Z j',
-                                                   batch_size=32, model_cls=ContrastiveHead, tqdm_batches=False)
-            df_res['DreaMS'] = df_res.reset_index().apply(
-                lambda row: F.cosine_similarity(dreams_embs_i[row['index']], dreams_embs_j[row['index']], dim=0).item()
-            , axis='columns')
-            from sklearn import metrics
-            fpr, tpr, thresholds = metrics.roc_curve(df_res['inchi14 label'], df_res['DreaMS'])
-            # df_res.to_pickle(io.append_to_stem(df_pth, f'dreams_preds_epoch={self.trainer.current_epoch}'))
-            auc = metrics.auc(fpr, tpr)
-            self.log('AUROC', auc)
-
-            # Cos corr
-            df_pth = EXPERIMENTS_DIR / 'spec_sim/data/cos_corr_benchmark.pkl'
-            df_res = pd.read_pickle(df_pth)
-            dreams_embs_i = get_dreams_predictions(self, df_res, spec_col='PARSED PEAKS i', prec_mz_col='PRECURSOR M/Z i',
-                                                   batch_size=32, model_cls=ContrastiveHead, tqdm_batches=False)
-            dreams_embs_j = get_dreams_predictions(self, df_res, spec_col='PARSED PEAKS j', prec_mz_col='PRECURSOR M/Z j',
-                                                   batch_size=32, model_cls=ContrastiveHead, tqdm_batches=False)
-
-            df_res['DreaMS'] = df_res.reset_index().apply(
-                lambda row: F.cosine_similarity(dreams_embs_i[row['index']], dreams_embs_j[row['index']], dim=0).item()
-            , axis='columns')
-            df_res.to_pickle(io.append_to_stem(df_pth, f'dreams_preds_epoch={self.trainer.current_epoch}'))
-            self.log('Pearson', df_res['DreaMS'].corr(df_res['Morgan Tanimoto'], method='pearson'))
