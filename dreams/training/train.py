@@ -1,4 +1,5 @@
 import h5py
+import numpy as np
 import pandas as pd
 import pytorch_lightning as pl
 import wandb
@@ -71,53 +72,73 @@ def main(args):
                 max_var_features=dataset.data[args.max_batch_var_features] if args.max_batch_var_features else None,
             )
     elif args.train_regime in {'fine-tuning', 'cv-fine-tuning'}:
-        df = pd.read_pickle(args.dataset_pth)
-
-        if args.train_objective == 'contrastive_spec_embs':
-            pos_idx_col, neg_idx_col = 'pos_idx', 'neg_idx'
-            dataset = ContrastiveSpectraDataset(
-                df, n_pos_samples=args.n_pos_samples, n_neg_samples=args.n_neg_samples,
-                spec_preproc=spec_preproc, return_smiles=True, logger=logger,
-                pos_idx_col=pos_idx_col, neg_idx_col=neg_idx_col
+        if args.dataset_pth.suffix == '.hdf5':
+            msdata = du.MSData(args.dataset_pth, in_mem=True)
+            dataset = msdata.to_torch_dataset(
+                spec_preproc=spec_preproc,
+                label=args.train_objective,
+                dformat=args.dformat
             )
-            # Drop spectra with insufficient number of nieghbors for contrastive training
-            # through modifying the split column
-            mask_enough_neighbors = (
-                (df[neg_idx_col].apply(len) >= args.n_neg_samples) \
-                & (df[pos_idx_col].apply(len) >= args.n_pos_samples)
-            )
-            if logger and mask_enough_neighbors.sum() != len(df):
-                n_removed = len(df) - mask_enough_neighbors.sum()
-                logger.info(f'Removing {n_removed} out of {len(df)} spectra with insufficient number of neighbors.')
-            assert 'fold' in df.columns or 'val' in df.columns, 'Contrastive dataset must have a split column.'
-            if 'fold' in df.columns:
-                df.loc[~mask_enough_neighbors, 'fold'] = 'none'
-            else:
-                df['fold'] = 'train'
-                df.loc[df['val'], 'fold'] = 'val'
-                df.loc[~mask_enough_neighbors, 'fold'] = 'none'
-                del df['val']
-        else:
-            dataset = du.AnnotatedSpectraDataset(
-                df['MSnSpectrum'].tolist(), label=args.train_objective, dformat=args.dformat, spec_preproc=spec_preproc,
-                return_smiles=args.retrieval_val_pth
-            )
-        if args.train_regime == 'cv-fine-tuning':
-            assert 'fold' in df.columns
-            data_module = du.CVDataModule(
-                dataset, fold_idx=df['fold'], batch_size=args.batch_size, num_workers=args.num_workers_data
-            )
-        elif args.random_fine_tuning_split:
-            data_module = du.RandomSplitDataModule(
-                dataset, val_frac=args.val_frac, batch_size=args.batch_size, num_workers=args.num_workers_data
-            )
-        else:
-            split_col = 'val' if 'val' in df.columns else 'fold'
-            assert split_col in df.columns
             data_module = du.SplittedDataModule(
-                dataset, split_mask=df[split_col], batch_size=args.batch_size, num_workers=args.num_workers_data,
-                n_train_samples=args.n_samples, seed=args.seed, include_val_in_train=args.include_val_in_train
+                dataset=dataset,
+                split_mask=pd.Series(msdata.get_values(FOLD)),
+                batch_size=args.batch_size,
+                num_workers=args.num_workers_data,
+                n_train_samples=args.n_samples,
+                seed=args.seed
             )
+        # NOTE: This is deprecated
+        elif args.dataset_pth.suffix == '.pkl':
+
+            df = pd.read_pickle(args.dataset_pth)
+
+            if args.train_objective == 'contrastive_spec_embs':
+                pos_idx_col, neg_idx_col = 'pos_idx', 'neg_idx'
+                dataset = ContrastiveSpectraDataset(
+                    df, n_pos_samples=args.n_pos_samples, n_neg_samples=args.n_neg_samples,
+                    spec_preproc=spec_preproc, return_smiles=True, logger=logger,
+                    pos_idx_col=pos_idx_col, neg_idx_col=neg_idx_col
+                )
+                # Drop spectra with insufficient number of nieghbors for contrastive training
+                # through modifying the split column
+                mask_enough_neighbors = (
+                    (df[neg_idx_col].apply(len) >= args.n_neg_samples) \
+                    & (df[pos_idx_col].apply(len) >= args.n_pos_samples)
+                )
+                if logger and mask_enough_neighbors.sum() != len(df):
+                    n_removed = len(df) - mask_enough_neighbors.sum()
+                    logger.info(f'Removing {n_removed} out of {len(df)} spectra with insufficient number of neighbors.')
+                assert 'fold' in df.columns or 'val' in df.columns, 'Contrastive dataset must have a split column.'
+                if 'fold' in df.columns:
+                    df.loc[~mask_enough_neighbors, 'fold'] = 'none'
+                else:
+                    df['fold'] = 'train'
+                    df.loc[df['val'], 'fold'] = 'val'
+                    df.loc[~mask_enough_neighbors, 'fold'] = 'none'
+                    del df['val']
+            else:
+                dataset = du.AnnotatedSpectraDataset(
+                    df['MSnSpectrum'].tolist(), label=args.train_objective, dformat=args.dformat, spec_preproc=spec_preproc,
+                    return_smiles=args.retrieval_val_pth
+                )
+            if args.train_regime == 'cv-fine-tuning':
+                assert 'fold' in df.columns
+                data_module = du.CVDataModule(
+                    dataset, fold_idx=df['fold'], batch_size=args.batch_size, num_workers=args.num_workers_data
+                )
+            elif args.random_fine_tuning_split:
+                data_module = du.RandomSplitDataModule(
+                    dataset, val_frac=args.val_frac, batch_size=args.batch_size, num_workers=args.num_workers_data
+                )
+            else:
+                split_col = 'val' if 'val' in df.columns else 'fold'
+                assert split_col in df.columns
+                data_module = du.SplittedDataModule(
+                    dataset, split_mask=df[split_col], batch_size=args.batch_size, num_workers=args.num_workers_data,
+                    n_train_samples=args.n_samples, seed=args.seed, include_val_in_train=args.include_val_in_train
+                )
+        else:
+            raise ValueError(f'Unknown dataset type: {args.dataset_pth.suffix}.')
 
     # Log dataset sizes
     cv = True if isinstance(data_module, du.CVDataModule) else False

@@ -43,8 +43,6 @@ from dreams.models.optimization.losses_metrics import FingerprintMetrics, CosSim
 from dreams.models.optimization.samplers import MaxVarBatchSampler
 from dreams.definitions import *
 
-def process_chunk(names_chunk, data_name):
-    return {n: np.where(data_name == n)[0] for n in names_chunk}
 
 class SpectrumPreprocessor:
     """
@@ -163,6 +161,408 @@ class SpectrumPreprocessor:
             spec = spec.astype(np.float32, copy=False)
 
         return spec
+
+
+def load_hdf5_in_mem(dct):
+    if isinstance(dct, h5py.Dataset):
+        return dct[()]
+    ret = {}
+    for k, v in dct.items():
+        ret[k] = load_hdf5_in_mem(v)
+    return ret
+
+
+class MSData:
+    def __init__(self, hdf5_pth: Union[Path, str, List[Path]], in_mem=False, mode='r', spec_col=SPECTRUM, prec_mz_col=PRECURSOR_MZ):
+        if isinstance(hdf5_pth, list):
+            self.f = io.ChunkedHDF5File(hdf5_pth)
+        else:
+            self.hdf5_pth = Path(hdf5_pth)
+            self.f = h5py.File(hdf5_pth, mode)
+
+        for k in [spec_col, prec_mz_col]:
+            if k not in self.f.keys():
+                raise ValueError(f'Column "{k}" is not present in the dataset {hdf5_pth}.')
+
+        if self.f[spec_col].shape[1] != 2 or len(self.f[spec_col].shape) != 3:
+            raise ValueError('Shape of spectra has to be (num_spectra, 2 (m/z, intensity), num_peaks).')
+
+        num_spectra = set()
+        for k in self.f.keys():
+            num_spectra.add(self.f[k].shape[0])
+        if len(num_spectra) != 1:
+            raise ValueError(f'Columns in {hdf5_pth} have different number of entries.')
+
+        self.in_mem = in_mem
+        self.num_spectra = num_spectra.pop()
+        self.data = self.f
+        self.mode = mode
+
+        if in_mem:
+            print(f'Loading dataset {self.hdf5_pth.stem} into memory ({self.num_spectra} spectra)...')
+            self.data = self.load_hdf5_in_mem(self.f)
+
+    def __del__(self):
+        if hasattr(self, 'f') and isinstance(self.f, h5py.File):
+            self.f.close()
+
+    def columns(self):
+        return list(self.data.keys())
+
+
+    def load_col_in_mem(self, col):
+        if isinstance(col, h5py.Group):
+            return self.load_hdf5_in_mem(col)
+        else:
+            col = col[:]
+            # if col.dtype == object:
+            #     col = np.char.decode(col.astype(bytes), 'utf-8', errors='ignore')
+            return col
+
+    def load_hdf5_in_mem(self, group):
+        data = {}
+        for key, item in group.items():
+            data[key] = self.load_col_in_mem(item)
+        return data
+
+    @staticmethod
+    def from_hdf5(pth: Path, **kwargs):
+        return MSData(pth, **kwargs)
+
+    @staticmethod
+    def from_hdf5_chunks(pths: List[Path], **kwargs):
+        return MSData(pths, **kwargs)
+
+    @staticmethod
+    def from_pandas(
+        df: Union[Path, str, pd.DataFrame],
+        n_highest_peaks=128,
+        spec_col=SPECTRUM,
+        prec_mz_col=PRECURSOR_MZ,
+        adduct_col=ADDUCT,
+        charge_col=CHARGE,
+        mol_col=SMILES,
+        ignore_cols=(),
+        in_mem=True,
+        hdf5_pth=None,
+        compression_opts=0,
+        mode='r'
+    ):
+
+        # Load dataframe
+        if isinstance(df, str):
+            df = Path(df)
+        if isinstance(df, Path):
+            hdf5_pth = df.with_suffix('.hdf5')
+            df = pd.read_pickle(df)
+        else:
+            if hdf5_pth is None:
+                raise ValueError('`hdf5_pth` has to be specified if `df` is not a Path.')
+
+        # Validate num. of peaks
+        if n_highest_peaks is None:
+            raise NotImplementedError('Not implemented yet. With this option, `n_highest_peaks` has to be set to max peaks in the dataset.')
+        elif n_highest_peaks < 1:
+            raise ValueError('`n_highest_peaks` has to be > 0.')
+
+        for col in [spec_col, prec_mz_col]:#, adduct_col, charge_col, smiles_col]:
+            if col not in df.columns:
+                raise ValueError(f'Column "{col}" is not present in the dataframe. Available columns: {df.columns}.')
+
+        # Convert dataframe columns to .hdf5 datasets
+        with h5py.File(hdf5_pth, 'w') as f:
+            for k, v in df.items():
+                if k in ignore_cols:
+                    continue
+
+                if k == spec_col:
+                    k = SPECTRUM
+                    pls = []
+                    for p in v:
+                        p = su.trim_peak_list(p, n_highest_peaks)
+                        p = su.pad_peak_list(p, n_highest_peaks)
+                        pls.append(p)
+                    v = np.stack(pls)
+                else:
+                    if k == prec_mz_col:
+                        k = PRECURSOR_MZ
+                    elif k == adduct_col:
+                        k = ADDUCT
+                    elif k == charge_col:
+                        k = CHARGE
+                    elif k == mol_col:
+                        k = SMILES
+                        if isinstance(v[0], str) and v[0].startswith('InChI='):
+                            v = [Chem.MolFromInchi(i) for i in v]
+                        if isinstance(v[0], Chem.rdchem.Mol):
+                            v = pd.Series([Chem.MolToSmiles(m) for m in v])
+
+                    if v.dtype == object:
+                        v = v.astype(str)
+                    v = v.values
+
+                f.create_dataset(k, data=v, compression='gzip', compression_opts=compression_opts)
+        return MSData(hdf5_pth, in_mem=in_mem, mode=mode)
+
+    @staticmethod
+    def from_mzml(pth: Union[Path, str], **kwargs):
+        # TODO: use mzml reader from process_ms_file.py, move it here
+        # TODO: refactor trimming and padding, no hard-coded 128
+
+        pth = Path(pth)
+        df = io.read_mzml(pth)
+        return MSData.from_pandas(df, hdf5_pth=pth.with_suffix('.hdf5'), **kwargs)
+
+    @staticmethod
+    def from_msp(pth: Union[Path, str], in_mem=True, **kwargs):
+        raise NotImplementedError('Not tested but should work.')
+        pth = Path(pth)
+        df = io.read_msp(pth)
+        MSData.from_pandas(df, in_mem=in_mem, df_pth=pth)
+        return MSData(pth.with_suffix('.hdf5'), in_mem=in_mem)
+
+    @staticmethod
+    def from_mgf(pth: Union[Path, str], in_mem=True, **kwargs):
+        pth = Path(pth)
+        df = io.read_mgf(pth)
+        return MSData.from_pandas(df, hdf5_pth=pth.with_suffix('.hdf5'), in_mem=in_mem, **kwargs)
+
+    @staticmethod
+    def from_pickle(pth: Union[Path, str], in_mem=True, **kwargs):
+        pth = Path(pth)
+        df = pd.read_pickle(pth)
+        return MSData.from_pandas(df, hdf5_pth=pth.with_suffix('.hdf5'), in_mem=in_mem, **kwargs)
+
+    @staticmethod
+    def load(pth: Union[Path, str], in_mem=False, **kwargs):
+        pth = Path(pth)
+        if pth.suffix.lower() == '.hdf5':
+            return MSData.from_hdf5(pth, in_mem=in_mem, **kwargs)
+        elif pth.suffix.lower() == '.mzml':
+            return MSData.from_mzml(pth, in_mem=in_mem, **kwargs)
+        elif pth.suffix.lower() == '.msp':
+            return MSData.from_msp(pth, in_mem=in_mem, **kwargs)
+        elif pth.suffix.lower() == '.mgf':
+            return MSData.from_mgf(pth, in_mem=in_mem, **kwargs)
+        elif pth.suffix.lower() == '.pkl':
+            return MSData.from_pandas(pth, in_mem=in_mem, **kwargs)
+        else:
+            raise NotImplementedError(f'Loading from {pth.suffix} is not implemented.')
+
+    def to_torch_dataset(self, spec_preproc: SpectrumPreprocessor, label=None, **kwargs):
+        if label is not None:
+            return LabeledSpectraDataset(msdata=self, label=label, spec_preproc=spec_preproc, **kwargs)
+        else:
+            return RawSpectraDataset(self.get_spectra(), self.get_prec_mzs(), spec_preproc, **kwargs)
+
+    def to_pandas(self, unpad=True, ignore_cols=(DREAMS_EMBEDDING,)):
+        df = {col: self.get_values(col) for col in self.columns() if col not in ignore_cols}
+
+        if SPECTRUM not in ignore_cols:
+            df[SPECTRUM] = list(self.get_spectra())
+            if unpad:
+                df[SPECTRUM] = [su.unpad_peak_list(s) for s in df[SPECTRUM]]
+
+        return pd.DataFrame(df)
+    
+    def to_mgf(self, out_pth: Union[Path, str]):
+        out_pth = Path(out_pth)
+        if not out_pth.exists():
+            out_pth.parent.mkdir(parents=True, exist_ok=True)
+
+        spectra = []
+        df = self.to_pandas()
+        for _, row in tqdm(df.iterrows(), total=len(df), desc='Converting to matchms before saving to mgf'):
+            spec = Spectrum(
+                mz=row[SPECTRUM][0],
+                intensities=row[SPECTRUM][1],
+                metadata={k: v for k, v in row.items() if k != SPECTRUM and v is not None and not pd.isna(v)}
+            )
+            spectra.append(spec)
+        save_as_mgf(spectra, str(out_pth))
+
+    def get_values(self, col, idx=None, decode_strings=True):
+        col = self.data[col]
+        col = col[idx] if idx is not None else col[:]
+        if decode_strings and isinstance(col, bytes):
+            col = col.decode('utf-8')
+        elif decode_strings and col.dtype == object:
+            col = [s.decode('utf-8') if isinstance(s, bytes) else s for s in col]
+        return col
+
+    def __len__(self):
+        return self.num_spectra
+
+    def __getitem__(self, col):
+        return self.get_values(col)
+
+    def at(self, i, plot_mol=True, plot_spec=True, return_spec=False, vals=None, unpad_spec=True):
+        if plot_spec:
+            su.plot_spectrum(self.data[SPECTRUM][i], prec_mz=self.data[PRECURSOR_MZ][i])
+        if plot_mol and SMILES in self.columns():
+            display(Chem.MolFromSmiles(self.data[SMILES][i]))
+        def process_val(v):
+            if isinstance(v, bytes):
+                return v.decode('utf-8')
+            return v
+        res = {k: process_val(self.data[k][i]) for k in self.columns() if (vals is None or k in vals)}
+
+        if SPECTRUM in res:
+            if not return_spec:
+                del res[SPECTRUM]
+            elif unpad_spec:
+                res[SPECTRUM] = su.unpad_peak_list(res[SPECTRUM])
+
+        return res
+
+    def get_spectra(self, idx=None):
+        return self.get_values(SPECTRUM, idx)
+
+    def get_prec_mzs(self, idx=None):
+        return self.get_values(PRECURSOR_MZ, idx)
+
+    def get_adducts(self, idx=None):
+        return self.get_values(ADDUCT, idx)
+    
+    def get_charges(self, idx=None):
+        return self.get_values(CHARGE, idx)
+    
+    def get_smiles(self, idx=None):
+        return self.get_values(SMILES, idx)
+
+    def remove_column(self, name):
+        del self.f[name]
+
+    def add_column(self, name, data, remove_old_if_exists=False):
+        if self.mode != 'a':
+            raise ValueError('Adding new columns is allowed only in append mode. Initialize msdata as '
+                             '`MSData(..., mode="a")` to add new columns.')
+        if remove_old_if_exists and name in self.columns():
+            self.remove_column(name)
+        self.f.create_dataset(name, data=data)
+
+    def rename_column(self, old_name, new_name, remove_old_if_exists=False):
+        if remove_old_if_exists and new_name in self.columns():
+            print(f'Removing column "{new_name}"...')
+            self.remove_column(new_name)
+        self.f[new_name] = self.f[old_name]
+        del self.f[old_name]
+        if self.in_mem:
+            self.data[new_name] = self.data.pop(old_name)
+
+    def extend_column(self, name, data):
+        if data.shape[1:] != self.f[name].shape[1:]:
+            raise ValueError(f'Shape of the data ({data.shape}) in dimensions > 0 does not match the shape of the '
+                             f'column "{name}" ({self.f[name].shape}).')
+        self.f[name].resize((self.f[name].shape[0] + data.shape[0], *data.shape[1:]))
+        self.f[name][-data.shape[0]:] = data
+
+    def form_subset(self, idx, out_pth, verbose=False):
+        with h5py.File(out_pth, 'w') as f:
+            for k in self.columns():
+                if verbose:
+                    print(f'Creating dataset "{k}"...')
+                f.create_dataset(k, data=self.get_values(k, decode_strings=False)[:][idx], dtype=self.f[k].dtype)
+        return MSData(out_pth)
+
+    def spec_to_matchms(self, i: int) -> Spectrum:
+        spec = su.unpad_peak_list(self.get_spectra(i))
+        metadata = self.at(i, plot=False, return_spec=False)
+        return Spectrum(
+            mz=spec[0],
+            intensities=spec[1],
+            metadata=metadata
+        )
+
+    def to_matchms(self, progress_bar=True) -> List[Spectrum]:
+        return [
+            self.spec_to_matchms(i)
+            for i in tqdm(range(len(self)), desc='Converting to matchms', disable=not progress_bar)
+        ]
+
+    @staticmethod
+    def merge(
+        pths: List[Path],
+        out_pth: Path,
+        cols=MSDATA_COLUMNS.copy(),
+        show_tqdm=True,
+        logger=None,
+        add_dataset_col=True,
+        in_mem=False,
+        spectra_already_trimmed=False,
+        filter_idx=None
+    ):
+        # TODO: spectra_already_trimmed can be determined from the data
+
+        os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
+        logger.info(f'Using HDF5_USE_FILE_LOCKING={os.environ["HDF5_USE_FILE_LOCKING"]}.')
+
+        for pth in pths:
+            if not pth.exists():
+                raise ValueError(f'File {pth} does not exist.')
+            if pth.suffix.lower() != '.hdf5':
+                raise ValueError(f'File {pth} is not a .hdf5 file.')
+
+        if not cols:
+            with h5py.File(pths[0], 'r') as f:
+                cols = list(f.keys())
+                logger.info(f'Columns not specified, using all columns from the first dataset: {cols}.')
+
+        for col in cols:
+            if not all(col in h5py.File(pth, 'r').keys() for pth in pths):
+                raise ValueError(f'Column "{col}" is not present in all of the datasets.')
+        
+        if add_dataset_col and DATASET not in cols:
+            cols.append(DATASET)
+
+        if not spectra_already_trimmed:
+            n_highest_peaks = max(h5py.File(pth, 'r')[SPECTRUM].shape[-1] for pth in pths)
+            if logger:
+                logger.info(f'Truncation spectra to {n_highest_peaks} highest peaks (max num. peaks among pths datasets).')
+
+        with h5py.File(out_pth, 'w') as f_out:
+            for i, pth in enumerate(tqdm(pths, desc='Merging hdfs')) if show_tqdm else enumerate(pths):
+                with h5py.File(pth, 'r') as f:
+
+                    f_len = f[list(f.keys())[0]].shape[0]
+                    if logger:
+                        logger.info(f'Appending {i+1}th / {len(pths)} hdf5 ({f_len} samples) file to {out_pth}.')
+
+                    if filter_idx is not None:
+                        idx = filter_idx(f)
+
+                    for k in cols:
+
+                        # New columns with constant file names
+                        if k == DATASET:
+                            data = np.array([pth.stem] * f_len, dtype='S')
+
+                        # Mzs and intensities to spectra
+                        elif k == SPECTRUM and not spectra_already_trimmed:
+                            data = f[k][:]
+                            spectra = su.trim_peak_list(data, n_highest=n_highest_peaks)
+                            spectra = su.pad_peak_list(data, target_len=n_highest_peaks)
+                            data = spectra
+
+                        # Other metadata datasets
+                        else:
+                            data = f[k][:]
+
+                        if filter_idx is not None:
+                            data = data[idx]
+
+                        if i == 0:
+                            f_out.create_dataset(
+                                k, data=data, shape=data.shape, maxshape=(None, *data.shape[1:]), dtype=data.dtype
+                            )
+                        else:
+                            f_out[k].resize(f_out[k].shape[0] + data.shape[0], axis=0)
+                            f_out[k][-data.shape[0]:] = data
+        
+        return MSData(out_pth, in_mem=in_mem)
+    
+    def __repr__(self) -> str:
+        return f'MSData(pth={self.hdf5_pth}, in_mem={self.in_mem}) with {len(self):,} spectra.'
 
 
 class MaskedSpectraDataset(Dataset):
@@ -456,6 +856,9 @@ class MaskedSpectraDataset(Dataset):
 
 
 class AnnotatedSpectraDataset(Dataset):
+    """
+    NOTE: This class is deprecated in favor of `LabeledSpectraDataset`.
+    """
     def __init__(self, spectra: List[su.MSnSpectrum], label: str, spec_preproc: SpectrumPreprocessor,
                  dformat: DataFormat, return_smiles=False):
         self.spectra = spectra
@@ -495,6 +898,59 @@ class AnnotatedSpectraDataset(Dataset):
 
         if self.return_smiles:
             item['smiles'] = Chem.MolToSmiles(self.spectra[i].get_precursor_mol(), isomericSmiles=False, canonical=True)
+
+        return item
+    
+
+class LabeledSpectraDataset(Dataset):
+    def __init__(self, msdata: Union[Path, str, MSData], label: str, spec_preproc: SpectrumPreprocessor,
+                 dformat: DataFormat, return_smiles=False):
+        self.msdata = msdata if isinstance(msdata, MSData) else MSData(Path(msdata), in_mem=True)
+        self.label = label
+        self.spec_preproc = spec_preproc
+        self.dformat = dformat
+        self.return_smiles = return_smiles
+        if self.label == 'mol_props':
+            self.prop_calc = mu.MolPropertyCalculator()
+
+    def __len__(self):
+        return len(self.spectra)
+
+    def __getitem__(self, i):
+        spectrum = self.msdata.get_spectra(i)
+        prec_mz = self.msdata.get_prec_mzs(i)
+        spectrum = self.spec_preproc(spectrum, prec_mz=prec_mz, high_form=False)
+
+        if self.label.startswith('num') or self.label.startswith('has'): # e.g. num_C or has_C
+            elem = self.label.split('_')[1]
+            formula = self.msdata.get_formulas(i, to_dict=True)
+            if elem not in formula:
+                label = 0.0
+            else:
+                label = float(formula[elem])
+        else:
+            mol = Chem.MolFromSmiles(self.msdata.get_smiles(i))
+            if self.label.startswith('fp'):  # e.g. fp_morgan_2048
+                label = mu.fp_func_from_str(self.label)(mol)
+            elif self.label == 'qed':
+                label = float(Chem.QED.qed(mol))
+            elif self.label == 'mol_props':
+                label = self.prop_calc.mol_to_props(mol, min_max_norm=True)
+            else:
+                raise ValueError(f'Invalid label name "{self.label}".')
+
+        # TODO: spec to definitions.SPECTRUM, prec_mz to definitions.PRECURSOR_MZ, etc.
+        item = {
+            'spec': spectrum,
+            'precursor mz': prec_mz,
+            'label': label,
+        }
+
+        # TODO: remove, TMP fix
+        item['charge'] = 1.0
+
+        if self.return_smiles:
+            item['smiles'] = Chem.MolToSmiles(mol, isomericSmiles=False, canonical=True)
 
         return item
 
@@ -538,402 +994,6 @@ class RawSpectraDataset(Dataset):
     #     if self.on_disk:
     #         self.df.to_pickle(self.data)
     #     return self.df
-
-
-def load_hdf5_in_mem(dct):
-    if isinstance(dct, h5py.Dataset):
-        return dct[()]
-    ret = {}
-    for k, v in dct.items():
-        ret[k] = load_hdf5_in_mem(v)
-    return ret
-
-
-class MSData:
-    def __init__(self, hdf5_pth: Union[Path, str, List[Path]], in_mem=False, mode='r', spec_col=SPECTRUM, prec_mz_col=PRECURSOR_MZ):
-        if isinstance(hdf5_pth, list):
-            self.f = io.ChunkedHDF5File(hdf5_pth)
-        else:
-            self.hdf5_pth = Path(hdf5_pth)
-            self.f = h5py.File(hdf5_pth, mode)
-
-        for k in [spec_col, prec_mz_col]:
-            if k not in self.f.keys():
-                raise ValueError(f'Column "{k}" is not present in the dataset {hdf5_pth}.')
-
-        if self.f[spec_col].shape[1] != 2 or len(self.f[spec_col].shape) != 3:
-            raise ValueError('Shape of spectra has to be (num_spectra, 2 (m/z, intensity), num_peaks).')
-
-        num_spectra = set()
-        for k in self.f.keys():
-            num_spectra.add(self.f[k].shape[0])
-        if len(num_spectra) != 1:
-            raise ValueError(f'Columns in {hdf5_pth} have different number of entries.')
-
-        self.in_mem = in_mem
-        self.num_spectra = num_spectra.pop()
-        self.data = self.f
-
-        if in_mem:
-            print(f'Loading dataset {self.hdf5_pth.stem} into memory ({self.num_spectra} spectra)...')
-            self.data = self.load_hdf5_in_mem(self.f)
-            self.f.close()  # Close the file if data is loaded into memory
-
-    def __del__(self):
-        if hasattr(self, 'f') and isinstance(self.f, h5py.File):
-            self.f.close()
-
-    def columns(self):
-        return list(self.data.keys())
-
-
-    def load_col_in_mem(self, col):
-        if isinstance(col, h5py.Group):
-            return self.load_hdf5_in_mem(col)
-        else:
-            col = col[:]
-            # if col.dtype == object:
-            #     col = np.char.decode(col.astype(bytes), 'utf-8', errors='ignore')
-            return col
-
-    def load_hdf5_in_mem(self, group):
-        data = {}
-        for key, item in group.items():
-            data[key] = self.load_col_in_mem(item)
-        return data
-
-    @staticmethod
-    def from_hdf5(pth: Path, **kwargs):
-        return MSData(pth, **kwargs)
-
-    @staticmethod
-    def from_hdf5_chunks(pths: List[Path], **kwargs):
-        return MSData(pths, **kwargs)
-
-    @staticmethod
-    def from_pandas(
-        df: Union[Path, str, pd.DataFrame],
-        n_highest_peaks=128,
-        spec_col=SPECTRUM,
-        prec_mz_col=PRECURSOR_MZ,
-        adduct_col=ADDUCT,
-        charge_col=CHARGE,
-        mol_col=SMILES,
-        ignore_cols=(),
-        in_mem=True,
-        hdf5_pth=None,
-        compression_opts=0,
-        mode='r'
-    ):
-
-        # Load dataframe
-        if isinstance(df, str):
-            df = Path(df)
-        if isinstance(df, Path):
-            hdf5_pth = df.with_suffix('.hdf5')
-            df = pd.read_pickle(df)
-        else:
-            if hdf5_pth is None:
-                raise ValueError('`hdf5_pth` has to be specified if `df` is not a Path.')
-
-        # Validate num. of peaks
-        if n_highest_peaks is None:
-            raise NotImplementedError('Not implemented yet. With this option, `n_highest_peaks` has to be set to max peaks in the dataset.')
-        elif n_highest_peaks < 1:
-            raise ValueError('`n_highest_peaks` has to be > 0.')
-
-        for col in [spec_col, prec_mz_col]:#, adduct_col, charge_col, smiles_col]:
-            if col not in df.columns:
-                raise ValueError(f'Column "{col}" is not present in the dataframe. Available columns: {df.columns}.')
-
-        # Convert dataframe columns to .hdf5 datasets
-        with h5py.File(hdf5_pth, 'w') as f:
-            for k, v in df.items():
-                if k in ignore_cols:
-                    continue
-
-                if k == spec_col:
-                    k = SPECTRUM
-                    pls = []
-                    for p in v:
-                        p = su.trim_peak_list(p, n_highest_peaks)
-                        p = su.pad_peak_list(p, n_highest_peaks)
-                        pls.append(p)
-                    v = np.stack(pls)
-                else:
-                    if k == prec_mz_col:
-                        k = PRECURSOR_MZ
-                    elif k == adduct_col:
-                        k = ADDUCT
-                    elif k == charge_col:
-                        k = CHARGE
-                    elif k == mol_col:
-                        k = SMILES
-                        if isinstance(v[0], str) and v[0].startswith('InChI='):
-                            v = [Chem.MolFromInchi(i) for i in v]
-                        if isinstance(v[0], Chem.rdchem.Mol):
-                            v = pd.Series([Chem.MolToSmiles(m) for m in v])
-
-                    if v.dtype == object:
-                        v = v.astype(str)
-                    v = v.values
-
-                f.create_dataset(k, data=v, compression='gzip', compression_opts=compression_opts)
-        return MSData(hdf5_pth, in_mem=in_mem, mode=mode)
-
-    @staticmethod
-    def from_mzml(pth: Union[Path, str], **kwargs):
-        # TODO: use mzml reader from process_ms_file.py, move it here
-        # TODO: refactor trimming and padding, no hard-coded 128
-
-        pth = Path(pth)
-        df = io.read_mzml(pth)
-        return MSData.from_pandas(df, hdf5_pth=pth.with_suffix('.hdf5'), **kwargs)
-
-    @staticmethod
-    def from_msp(pth: Union[Path, str], in_mem=True, **kwargs):
-        raise NotImplementedError('Not tested but should work.')
-        pth = Path(pth)
-        df = io.read_msp(pth)
-        MSData.from_pandas(df, in_mem=in_mem, df_pth=pth)
-        return MSData(pth.with_suffix('.hdf5'), in_mem=in_mem)
-
-    @staticmethod
-    def from_mgf(pth: Union[Path, str], in_mem=True, **kwargs):
-        pth = Path(pth)
-        df = io.read_mgf(pth)
-        return MSData.from_pandas(df, hdf5_pth=pth.with_suffix('.hdf5'), in_mem=in_mem, **kwargs)
-
-    @staticmethod
-    def from_pickle(pth: Union[Path, str], in_mem=True, **kwargs):
-        pth = Path(pth)
-        df = pd.read_pickle(pth)
-        return MSData.from_pandas(df, hdf5_pth=pth.with_suffix('.hdf5'), in_mem=in_mem, **kwargs)
-
-    @staticmethod
-    def load(pth: Union[Path, str], in_mem=False, **kwargs):
-        pth = Path(pth)
-        if pth.suffix.lower() == '.hdf5':
-            return MSData.from_hdf5(pth, in_mem=in_mem, **kwargs)
-        elif pth.suffix.lower() == '.mzml':
-            return MSData.from_mzml(pth, in_mem=in_mem, **kwargs)
-        elif pth.suffix.lower() == '.msp':
-            return MSData.from_msp(pth, in_mem=in_mem, **kwargs)
-        elif pth.suffix.lower() == '.mgf':
-            return MSData.from_mgf(pth, in_mem=in_mem, **kwargs)
-        elif pth.suffix.lower() == '.pkl':
-            return MSData.from_pandas(pth, in_mem=in_mem, **kwargs)
-        else:
-            raise NotImplementedError(f'Loading from {pth.suffix} is not implemented.')
-
-    def to_torch_dataset(self, spec_preproc: SpectrumPreprocessor):
-        return RawSpectraDataset(self.get_spectra(), self.get_prec_mzs(), spec_preproc)
-
-    def to_pandas(self, unpad=True, ignore_cols=()):
-        df = {col: self.get_values(col) for col in self.columns() if col not in ignore_cols}
-
-        if SPECTRUM not in ignore_cols:
-            df[SPECTRUM] = list(self.get_spectra())
-            if unpad:
-                df[SPECTRUM] = [su.unpad_peak_list(s) for s in df[SPECTRUM]]
-
-        return pd.DataFrame(df)
-    
-    def to_mgf(self, out_pth: Union[Path, str]):
-        out_pth = Path(out_pth)
-        if not out_pth.exists():
-            out_pth.parent.mkdir(parents=True, exist_ok=True)
-
-        spectra = []
-        df = self.to_pandas()
-        for _, row in tqdm(df.iterrows(), total=len(df), desc='Converting to matchms before saving to mgf'):
-            spec = Spectrum(
-                mz=row[SPECTRUM][0],
-                intensities=row[SPECTRUM][1],
-                metadata={k: v for k, v in row.items() if k != SPECTRUM and v is not None and not pd.isna(v)}
-            )
-            spectra.append(spec)
-        save_as_mgf(spectra, str(out_pth))
-
-    def get_values(self, col, idx=None, decode_strings=True):
-        col = self.data[col]
-        col = col[idx] if idx is not None else col[:]
-        if decode_strings and isinstance(col, bytes):
-            col = col.decode('utf-8')
-        elif decode_strings and col.dtype == object:
-            col = [s.decode('utf-8') if isinstance(s, bytes) else s for s in col]
-        return col
-
-    def __len__(self):
-        return self.num_spectra
-
-    def __getitem__(self, col):
-        return self.get_values(col)
-
-    def at(self, i, plot_mol=True, plot_spec=True, return_spec=False, vals=None, unpad_spec=True):
-        if plot_spec:
-            su.plot_spectrum(self.data[SPECTRUM][i], prec_mz=self.data[PRECURSOR_MZ][i])
-        if plot_mol and SMILES in self.columns():
-            display(Chem.MolFromSmiles(self.data[SMILES][i]))
-        def process_val(v):
-            if isinstance(v, bytes):
-                return v.decode('utf-8')
-            return v
-        res = {k: process_val(self.data[k][i]) for k in self.columns() if (vals is None or k in vals)}
-
-        if SPECTRUM in res:
-            if not return_spec:
-                del res[SPECTRUM]
-            elif unpad_spec:
-                res[SPECTRUM] = su.unpad_peak_list(res[SPECTRUM])
-
-        return res
-
-    def get_spectra(self, idx=None):
-        return self.get_values(SPECTRUM, idx)
-
-    def get_prec_mzs(self, idx=None):
-        return self.get_values(PRECURSOR_MZ, idx)
-
-    def get_adducts(self, idx=None):
-        return self.get_values(ADDUCT, idx)
-    
-    def get_charges(self, idx=None):
-        return self.get_values(CHARGE, idx)
-    
-    def get_smiles(self, idx=None):
-        return self.get_values(SMILES, idx)
-
-    def remove_column(self, name):
-        del self.f[name]
-
-    def add_column(self, name, data, remove_old_if_exists=False):
-        if remove_old_if_exists and name in self.columns():
-            self.remove_column(name)
-        self.f.create_dataset(name, data=data)
-
-    def rename_column(self, old_name, new_name, remove_old_if_exists=False):
-        if remove_old_if_exists and new_name in self.columns():
-            print(f'Removing column "{new_name}"...')
-            self.remove_column(new_name)
-        self.f[new_name] = self.f[old_name]
-        del self.f[old_name]
-        if self.in_mem:
-            self.data[new_name] = self.data.pop(old_name)
-
-    def extend_column(self, name, data):
-        if data.shape[1:] != self.f[name].shape[1:]:
-            raise ValueError(f'Shape of the data ({data.shape}) in dimensions > 0 does not match the shape of the '
-                             f'column "{name}" ({self.f[name].shape}).')
-        self.f[name].resize((self.f[name].shape[0] + data.shape[0], *data.shape[1:]))
-        self.f[name][-data.shape[0]:] = data
-
-    def form_subset(self, idx, out_pth, verbose=False):
-        with h5py.File(out_pth, 'w') as f:
-            for k in self.columns():
-                if verbose:
-                    print(f'Creating dataset "{k}"...')
-                f.create_dataset(k, data=self.get_values(k, decode_strings=False)[:][idx], dtype=self.f[k].dtype)
-        return MSData(out_pth)
-
-    def spec_to_matchms(self, i: int) -> Spectrum:
-        spec = su.unpad_peak_list(self.get_spectra(i))
-        metadata = self.at(i, plot=False, return_spec=False)
-        return Spectrum(
-            mz=spec[0],
-            intensities=spec[1],
-            metadata=metadata
-        )
-
-    def to_matchms(self, progress_bar=True) -> List[Spectrum]:
-        return [
-            self.spec_to_matchms(i)
-            for i in tqdm(range(len(self)), desc='Converting to matchms', disable=not progress_bar)
-        ]
-
-    @staticmethod
-    def merge(
-        pths: List[Path],
-        out_pth: Path,
-        cols=MSDATA_COLUMNS.copy(),
-        show_tqdm=True,
-        logger=None,
-        add_dataset_col=True,
-        in_mem=False,
-        spectra_already_trimmed=False,
-        filter_idx=None
-    ):
-        # TODO: spectra_already_trimmed can be determined from the data
-
-        os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
-        logger.info(f'Using HDF5_USE_FILE_LOCKING={os.environ["HDF5_USE_FILE_LOCKING"]}.')
-
-        for pth in pths:
-            if not pth.exists():
-                raise ValueError(f'File {pth} does not exist.')
-            if pth.suffix.lower() != '.hdf5':
-                raise ValueError(f'File {pth} is not a .hdf5 file.')
-
-        if not cols:
-            with h5py.File(pths[0], 'r') as f:
-                cols = list(f.keys())
-                logger.info(f'Columns not specified, using all columns from the first dataset: {cols}.')
-
-        for col in cols:
-            if not all(col in h5py.File(pth, 'r').keys() for pth in pths):
-                raise ValueError(f'Column "{col}" is not present in all of the datasets.')
-        
-        if add_dataset_col and DATASET not in cols:
-            cols.append(DATASET)
-
-        if not spectra_already_trimmed:
-            n_highest_peaks = max(h5py.File(pth, 'r')[SPECTRUM].shape[-1] for pth in pths)
-            if logger:
-                logger.info(f'Truncation spectra to {n_highest_peaks} highest peaks (max num. peaks among pths datasets).')
-
-        with h5py.File(out_pth, 'w') as f_out:
-            for i, pth in enumerate(tqdm(pths, desc='Merging hdfs')) if show_tqdm else enumerate(pths):
-                with h5py.File(pth, 'r') as f:
-
-                    f_len = f[list(f.keys())[0]].shape[0]
-                    if logger:
-                        logger.info(f'Appending {i+1}th / {len(pths)} hdf5 ({f_len} samples) file to {out_pth}.')
-
-                    if filter_idx is not None:
-                        idx = filter_idx(f)
-
-                    for k in cols:
-
-                        # New columns with constant file names
-                        if k == DATASET:
-                            data = np.array([pth.stem] * f_len, dtype='S')
-
-                        # Mzs and intensities to spectra
-                        elif k == SPECTRUM and not spectra_already_trimmed:
-                            data = f[k][:]
-                            spectra = su.trim_peak_list(data, n_highest=n_highest_peaks)
-                            spectra = su.pad_peak_list(data, target_len=n_highest_peaks)
-                            data = spectra
-
-                        # Other metadata datasets
-                        else:
-                            data = f[k][:]
-
-                        if filter_idx is not None:
-                            data = data[idx]
-
-                        if i == 0:
-                            f_out.create_dataset(
-                                k, data=data, shape=data.shape, maxshape=(None, *data.shape[1:]), dtype=data.dtype
-                            )
-                        else:
-                            f_out[k].resize(f_out[k].shape[0] + data.shape[0], axis=0)
-                            f_out[k][-data.shape[0]:] = data
-        
-        return MSData(out_pth, in_mem=in_mem)
-    
-    def __repr__(self) -> str:
-        return f'MSData(pth={self.hdf5_pth}, in_mem={self.in_mem}) with {len(self):,} spectra.'
 
 
 class ContrastiveSpectraDataset(Dataset):
@@ -1480,7 +1540,7 @@ class RandomSplitDataModule(pl.LightningDataModule):
 
 class SplittedDataModule(pl.LightningDataModule):
 
-    def __init__(self, dataset, split_mask: Union[pd.Series, np.ndarray], batch_size: Optional[int], num_workers=0,
+    def __init__(self, dataset, split_mask: Union[pd.Series, np.ndarray, list], batch_size: Optional[int], num_workers=0,
                  n_train_samples=None, seed=None, include_val_in_train=False):
         super().__init__()
         self.dataset = dataset
@@ -1489,6 +1549,9 @@ class SplittedDataModule(pl.LightningDataModule):
         self.include_val_in_train = include_val_in_train
         self.n_train_samples = n_train_samples
         self.seed = seed
+
+        if not isinstance(split_mask, pd.Series) and not isinstance(split_mask, np.ndarray):
+            split_mask = pd.Series(split_mask)
 
         if isinstance(split_mask, pd.Series):
             if split_mask.dtype == bool:
