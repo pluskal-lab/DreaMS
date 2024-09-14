@@ -23,6 +23,7 @@ Contents
    tutorials/msdata
    tutorials/compute_embeddings
    tutorials/library_matching
+   tutorials/networking
    tutorials/lsh_clustering
    tutorials/atlas
 
