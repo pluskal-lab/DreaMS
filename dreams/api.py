@@ -158,9 +158,9 @@ def dreams_predictions(
     return preds
 
 
-def dreams_embeddings(pth, batch_size=32, progress_bar=True, write_log=False, **msdata_kwargs):
+def dreams_embeddings(pth, batch_size=32, progress_bar=True, logger_pth=None, **msdata_kwargs):
     return dreams_predictions(
-        DREAMS_EMBEDDING, pth, batch_size=batch_size, progress_bar=progress_bar, write_log=write_log, **msdata_kwargs
+        DREAMS_EMBEDDING, pth, batch_size=batch_size, progress_bar=progress_bar, logger_pth=logger_pth, **msdata_kwargs
     )
 
 
