@@ -67,8 +67,8 @@ The resulting `embs` object is a matrix with 5 rows and 1024 columns, representi
 
 - Paper: [https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f](https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f).
 - Documentation and tutorials: [https://dreams-docs.readthedocs.io/](https://dreams-docs.readthedocs.io/).
-- Hugging Face Hub with GeMS dataset and DreaMS Atlas: [https://huggingface.co/roman-bushuiev/GeMS](https://huggingface.co/datasets/roman-bushuiev/GeMS).
-- Weights of pre-trained models: [https://zenodo.org/record/TODO](https://zenodo.org/records/10997887).
+- Hugging Face Hub with GeMS dataset and DreaMS Atlas: [https://huggingface.co/datasets/roman-bushuiev/GeMS](https://huggingface.co/datasets/roman-bushuiev/GeMS).
+- Weights of pre-trained models: [https://zenodo.org/records/10997887](https://zenodo.org/records/10997887).
 
 If you use DreaMS in your research, please cite the following paper:
 
