@@ -36,7 +36,7 @@ class PreTrainedModel:
             # Download backbone model if it doesn't exist
             backbone_pth = PRETRAINED / 'ssl_model.ckpt'
             if not backbone_pth.exists():
-                utils.download_pretrained_model()
+                utils.download_pretrained_model('ssl_model.ckpt')
 
             return cls(
                 ckpt_cls.load_from_checkpoint(
