@@ -53,6 +53,11 @@ class PreTrainedModel:
             ckpt_path = PRETRAINED / 'embedding_model.ckpt'
             ckpt_cls = ContrastiveHead
             n_highest_peaks = 100
+
+            # Download model if it doesn't exist
+            if not ckpt_path.exists():
+                ckpt_path = utils.download_pretrained_model('embedding_model.ckpt')
+
         # elif name == 'Fluorine probability':
         #     ckpt_path = EXPERIMENTS_DIR / 'pre_training/HAS_F_1.0/CtDh6OHlhA/epoch=6-step=71500_v2_16bs_5e-5lr_gamma0.5_alpha0.8/epoch=30-step=111000.ckpt'
         #     ckpt_cls = BinClassificationHead
@@ -63,10 +68,6 @@ class PreTrainedModel:
         #     n_highest_peaks = 100
         else:
             raise ValueError(f'{name} is not a valid pre-trained model name. Choose from: {cls.available_models()}')
-
-        # Download model if it doesn't exist
-        if not ckpt_path.exists():
-            utils.download_pretrained_model(ckpt_path)
 
         return cls.from_ckpt(ckpt_path, ckpt_cls, n_highest_peaks)
 
