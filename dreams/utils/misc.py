@@ -9,12 +9,15 @@ import plotly.graph_objects as go
 from collections import Counter
 from typing import Sequence
 from huggingface_hub import hf_hub_download
+from pathlib import Path
 from dreams.definitions import PRETRAINED
 
 
-def download_pretrained_model(model_name: str = 'embedding_model.ckpt'):
+def download_pretrained_model(model_name: str = 'embedding_model.ckpt', download_dir: Path = PRETRAINED):
+    target_path = download_dir / model_name
     url = 'https://zenodo.org/records/10997887/files/' + model_name
-    os.system(f'wget {url} -O {PRETRAINED / model_name}')
+    os.system(f'wget {url} -O {target_path}')
+    return target_path
 
 
 def networkx_to_dataframe(G: nx.Graph) -> pd.DataFrame:
