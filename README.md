@@ -30,7 +30,7 @@ Additionally, for further research and development:
 - 🔄 Convert conventional MS/MS data formats into our new, **ML-friendly HDF5-based format**.
 - 📊 Split MS/MS datasets into training and validation folds using **Murcko histograms** of molecular structures.
 
-Please refer our [documentation](https://dreams-docs.readthedocs.io/) and paper ["Emergence of molecular structures from repository-scale self-supervised learning on tandem mass spectra"](https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f) for more details.
+📚 Please refer our [documentation](https://dreams-docs.readthedocs.io/) and paper ["Emergence of molecular structures from repository-scale self-supervised learning on tandem mass spectra"](https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f) for more details.
 
 ## Getting started
 
@@ -67,8 +67,11 @@ The resulting `embs` object is a matrix with 5 rows and 1024 columns, representi
 
 - Paper: [https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f](https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f).
 - Documentation and tutorials: [https://dreams-docs.readthedocs.io/](https://dreams-docs.readthedocs.io/).
-- Hugging Face Hub with GeMS dataset and DreaMS Atlas: [https://huggingface.co/datasets/roman-bushuiev/GeMS](https://huggingface.co/datasets/roman-bushuiev/GeMS).
 - Weights of pre-trained models: [https://zenodo.org/records/10997887](https://zenodo.org/records/10997887).
+- Datasets:
+  - GeMS dataset: [https://huggingface.co/datasets/roman-bushuiev/GeMS/tree/main/data](https://huggingface.co/datasets/roman-bushuiev/GeMS/tree/main/data).
+  - DreaMS Atlas: [https://huggingface.co/datasets/roman-bushuiev/GeMS/tree/main/data/DreaMS_Atlas](https://huggingface.co/datasets/roman-bushuiev/GeMS/tree/main/data/DreaMS_Atlas).
+  - Labeled MS/MS spectra: [https://huggingface.co/datasets/roman-bushuiev/GeMS/tree/main/data/auxiliary](https://huggingface.co/datasets/roman-bushuiev/GeMS/tree/main/data/auxiliary).
 
 If you use DreaMS in your research, please cite the following paper:
 
