@@ -3,6 +3,7 @@ import numpy as np
 import heapq
 import torch
 import os
+import typing as T
 import pandas as pd
 import networkx as nx
 import plotly.graph_objects as go
@@ -64,7 +65,7 @@ def networkx_to_dataframe(G: nx.Graph) -> pd.DataFrame:
     return df
 
 
-def gems_hf_download(file_pth: str) -> str:
+def gems_hf_download(file_pth: str, local_dir: T.Optional[T.Union[str, Path]] = None) -> str:
     """
     Download a file from the Hugging Face Hub and return its location on disk.
     
@@ -75,6 +76,8 @@ def gems_hf_download(file_pth: str) -> str:
         repo_id="roman-bushuiev/GeMS",
         filename="data/" + file_pth,
         repo_type="dataset",
+        local_dir=local_dir,
+        cache_dir=local_dir
     )
 
 

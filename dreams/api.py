@@ -353,40 +353,51 @@ def dreams_attn_scores(
 
 
 class DreaMSAtlas:
-    def __init__(self):
+    def __init__(self, local_dir: T.Optional[T.Union[str, Path]] = None):
+        """
+        Initialize a DreaMSAtlas object enabling access to the DreaMS Atlas k-NN graph and associated data for
+        individual nodes in the graph.
+
+        Args:
+            local_dir (Union[str, Path], optional): Local directory to download and cache data. Defaults to
+            ~/.cache/huggingface/hub.
+        """
 
         print('Initializing DreaMS Atlas data structures...')
         self.lib = du.MSData(
-            utils.gems_hf_download('DreaMS_Atlas/nist20_mona_clean_merged_spectra_dreams_hidden_nist20.hdf5'),
+            utils.gems_hf_download(
+                'DreaMS_Atlas/nist20_mona_clean_merged_spectra_dreams_hidden_nist20.hdf5',
+                local_dir=local_dir
+            ),
             in_mem=False
         )
         print(f'Loaded spectral library ({len(self.lib):,} spectra).')
 
         self.gems = du.MSData.from_hdf5_chunks(
-            [utils.gems_hf_download(f'GeMS_C/GeMS_C1_DreaMS.{i}.hdf5') for i in range(10)],
+            [utils.gems_hf_download(f'GeMS_C/GeMS_C1_DreaMS.{i}.hdf5', local_dir=local_dir) for i in range(10)],
             in_mem=False
         )
         print(f'Loaded GeMS-C1 dataset ({len(self.gems):,} spectra).')
 
         self.csrknn = du.CSRKNN.from_npz(
-            utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN.npz'),
+            utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN.npz', local_dir=local_dir),
         )
         print(f'Loaded DreaMS Atlas edges ({self.csrknn.n_edges:,} edges).')
 
         self.dreams_clusters = pd.read_csv(
-            utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN_clusters.csv')
+            utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN_clusters.csv', local_dir=local_dir)
         )['clusters']
         print(f'Loaded DreaMS Atlas nodes representing DreaMS k-NN clusters of GeMS-C1 ({self.dreams_clusters.nunique():,} nodes).')
 
         self.gems_lsh = du.MSData.from_hdf5_chunks(
-            [utils.gems_hf_download(f'GeMS_C/GeMS_C.{i}.hdf5') for i in range(10)],
+            [utils.gems_hf_download(f'GeMS_C/GeMS_C.{i}.hdf5', local_dir=local_dir) for i in range(10)],
             in_mem=False
         )
         self.lsh_clusters = self.gems_lsh['lsh'][:]
         print(f'Loaded LSH clusters of DreaMS Atlas nodes representing GeMS-C ({len(self.lsh_clusters):,} spectra).')
 
         self.msv_metadata = pd.read_csv(
-            utils.gems_hf_download('DreaMS_Atlas/massive_metadata.tsv'), sep='\t', comment='#', low_memory=False
+            utils.gems_hf_download('DreaMS_Atlas/massive_metadata.tsv', local_dir=local_dir), sep='\t', comment='#', low_memory=False
         )
         self.msv_metadata = self.msv_metadata.set_index('dataset')
         self.msv_metadata = self.msv_metadata[[
