@@ -1233,8 +1233,11 @@ class ChunkedHDF5File:
 
     def close(self):
         """Close all files."""
-        for f in self.files:
-            f.close()
+        try:
+            for f in self.files:
+                f.close()
+        except Exception as e:
+            print(f'Ignored error while closing chunked HDF5 files: {e}')
 
     def __del__(self):
         """Ensure all files are properly closed when the object is deleted."""
