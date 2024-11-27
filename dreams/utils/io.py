@@ -327,7 +327,8 @@ def read_textual_ms_format(
         charge_name='CHARGE',
         adduct_name='ADDUCT',
         smiles_name='SMILES',
-        ignore_line_prefixes=()
+        ignore_line_prefixes=(),
+        encoding='utf-8',
     ):
     # TODO: this is very raw and dirty.
 
@@ -338,7 +339,7 @@ def read_textual_ms_format(
     attr_mapping = {prec_mz_name: PRECURSOR_MZ, charge_name: CHARGE, adduct_name: ADDUCT, smiles_name: SMILES}
 
     data = []
-    with open(pth, 'r') as f:
+    with open(pth, 'r', encoding=encoding) as f:
         lines = f.readlines()
 
         # TODO?
