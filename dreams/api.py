@@ -382,12 +382,12 @@ class DreaMSAtlas:
         self.csrknn = du.CSRKNN.from_npz(
             utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN.npz', local_dir=local_dir),
         )
-        print(f'Loaded DreaMS Atlas edges ({self.csrknn.n_edges:,} edges).')
+        print(f'Loaded DreaMS Atlas edges ({self.csrknn.n_nodes:,} nodes and {self.csrknn.n_edges:,} edges).')
 
         self.dreams_clusters = pd.read_csv(
             utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN_clusters.csv', local_dir=local_dir)
         )['clusters']
-        print(f'Loaded DreaMS Atlas nodes representing DreaMS k-NN clusters of GeMS-C1 ({self.dreams_clusters.nunique():,} nodes).')
+        print(f'Loaded DreaMS Atlas k-NN cluster representatives from GeMS-C1 ({self.dreams_clusters.nunique():,} representatives).')
 
         self.gems_lsh = du.MSData.from_hdf5_chunks(
             [utils.gems_hf_download(f'GeMS_C/GeMS_C.{i}.hdf5', local_dir=local_dir) for i in range(10)],
@@ -406,7 +406,11 @@ class DreaMSAtlas:
         ]]
         self.msv_metadata = self.msv_metadata.rename(columns={c: 'msv_' + c for c in self.msv_metadata.columns})
 
-        self.knn_i_to_repr = np.unique(self.dreams_clusters)
+        # self.knn_i_to_repr = np.unique(self.dreams_clusters)  # When NIST20 is not hidden
+        self.knn_i_to_repr = np.load(
+            utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN_knn_i_to_repr.npz', local_dir=local_dir)
+        )['knn_i_to_repr']
+        print(f'Loaded mapping from k-NN indices to node representatives (corresponding to {len(self.knn_i_to_repr):,} nodes).')
         self.repr_to_knn_i = dict(zip(
             self.knn_i_to_repr,
             list(range(len(self.dreams_clusters)))
@@ -567,13 +571,18 @@ class DreaMSAtlas:
         return bfs_graph
 
     def encode_knn_i(self, node_repr_i):
+        if node_repr_i not in self.repr_to_knn_i.keys():
+            raise ValueError(f'Node {node_repr_i} not found in the DreaMS Atlas k-NN graph. If you are using a standard '
+                             'public version of the DreaMS Atlas, most likely the queried entry is associated with a '
+                             'NIST20 spectrum which was masked in the public version of the Atlas due to the NIST20 '
+                             'licensing restrictions.')
         return self.repr_to_knn_i[node_repr_i]
 
     def decode_knn_i(self, knn_i):
         return self.knn_i_to_repr[knn_i]
     
     def get_lib_idx(self):
-        # return np.array(range(self.lib.num_spectra))
+        # return np.array(range(self.lib.num_spectra))  # When NIST20 is not hidden
         return np.where(self.lib[PRECURSOR_MZ] != -1)[0]  # -1 values are hidden NIST20 spectra
     
     def __len__(self):
