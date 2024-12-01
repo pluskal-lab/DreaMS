@@ -1,6 +1,6 @@
-sphinx
+sphinx==7.4.7
 m2r2==0.3.3.post2
-sphinx-rtd-theme
+sphinx-rtd-theme==2.0.0
 nbsphinx==0.9.4
-lxml_html_clean
+lxml_html_clean==0.2.2
 mistune==0.8.4
