@@ -36,8 +36,9 @@ class DataFormat(ABC):
             tbxic_stdev: T.Optional[float] = None,
             charge: T.Optional[int] = None,
             mslevel: T.Optional[int] = None,
-            verbose: bool = False
-        ) -> bool:
+            verbose: bool = False,
+            return_problems: bool = False
+        ) -> T.Union[bool, str]:
 
         if spec.shape[0] != 2:
             raise ValueError('The input array should have 2 rows (m/z and intensity).')
@@ -46,31 +47,31 @@ class DataFormat(ABC):
         if mslevel is not None and mslevel > self.max_ms_level:
             if verbose:
                 print(f"MS level check failed. Expected <= {self.max_ms_level}, got {mslevel}")
-            return False
+            return f"MS level <= {self.max_ms_level}" if return_problems else False
         if prec_mz is not None and prec_mz > self.max_prec_mz:
             if verbose:
                 print(f"Precursor m/z check failed. Expected <= {self.max_prec_mz}, got {prec_mz}")
-            return False
+            return f"Precursor m/z <= {self.max_prec_mz}" if return_problems else False
         if tbxic_stdev is not None and tbxic_stdev > self.max_tbxic_stdev:
             if verbose:
                 print(f"TBXIC stdev check failed. Expected <= {self.max_tbxic_stdev}, got {tbxic_stdev}")
-            return False
+            return f"TBXIC stdev <= {self.max_tbxic_stdev}" if return_problems else False
         if charge is not None and (charge < self.min_charge or charge > self.max_charge):
             if verbose:
                 print(f"Charge check failed. Expected between {self.min_charge} and {self.max_charge}, got {charge}")
-            return False
+            return f"Charge between {self.min_charge} and {self.max_charge}" if return_problems else False
 
         # Check number of peaks
         if spec.shape[1] < self.min_peaks_n or spec.shape[1] > self.max_peaks_n:
             if verbose:
                 print(f"Number of peaks check failed. Expected between {self.min_peaks_n} and {self.max_peaks_n}, got {spec.shape[1]}")
-            return False
+            return f"Number of peaks between {self.min_peaks_n} and {self.max_peaks_n}" if return_problems else False
         
         # Check mz range
         if su.max_mz(spec) > self.max_mz:
             if verbose:
                 print(f"m/z range check failed. Expected <= {self.max_mz}, got {su.max_mz(spec)}")
-            return False
+            return f"m/z range <= {self.max_mz}" if return_problems else False
         
         # Make relative intensities for the following checks
         spec = su.to_rel_intensity(spec)
@@ -79,18 +80,18 @@ class DataFormat(ABC):
         if su.intens_amplitude(spec) < self.min_intensity_ampl:
             if verbose:
                 print(f"Intensity amplitude check failed. Expected >= {self.min_intensity_ampl}, got {su.intens_amplitude(spec)}")
-            return False
+            return f"Intensity amplitude >= {self.min_intensity_ampl}" if return_problems else False
         
         # Check number of high intensity peaks
         if su.num_high_peaks(spec, self.high_intensity_thld) < self.min_peaks_n:
             if verbose:
                 print(f"Number of high intensity peaks check failed. Expected >= {self.min_peaks_n}, got {su.num_high_peaks(spec, self.high_intensity_thld)}")
-            return False
+            return f"Number of high intensity peaks >= {self.min_peaks_n}" if return_problems else False
         
         if verbose:
             print('All checks passed')
 
-        return True
+        return True if not return_problems else 'All checks passed'
 
 
 class DataFormatA(DataFormat):
