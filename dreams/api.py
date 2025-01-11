@@ -23,29 +23,51 @@ class PreTrainedModel:
         self.model = model.eval()
         self.n_highest_peaks = n_highest_peaks
 
+    def remove_unused_backbone_parameters(model):
+        """Helper function to remove unused heads from the pre-trained DreaMS backbone model."""
+        if hasattr(model, 'ff_out'):
+            delattr(model, 'ff_out')
+        if hasattr(model, 'mz_masking_loss'):
+            delattr(model, 'mz_masking_loss')
+        if hasattr(model, 'ro_out'):
+            delattr(model, 'ro_out')
+        return model
+
     @classmethod
-    def from_ckpt(cls, ckpt_path: Path, ckpt_cls: T.Union[T.Type[DreaMSModel], T.Type[FineTuningHead]], n_highest_peaks: int):
+    def from_ckpt(
+        cls,
+        ckpt_path: Path,
+        ckpt_cls: T.Union[T.Type[DreaMSModel], T.Type[FineTuningHead]],
+        n_highest_peaks: int,
+        remove_unused_backbone_parameters: bool = True
+    ):
         if ckpt_cls == DreaMSModel:
-            return cls(
+            model = cls(
                 ckpt_cls.load_from_checkpoint(
                     ckpt_path,
                     map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
                 )
             )
+            if remove_unused_backbone_parameters:
+                model.model = cls.remove_unused_backbone_parameters(model.model)
+            return model
         else:
             # Download backbone model if it doesn't exist
             backbone_pth = PRETRAINED / 'ssl_model.ckpt'
             if not backbone_pth.exists():
                 utils.download_pretrained_model('ssl_model.ckpt')
 
-            return cls(
+            model = cls(
                 ckpt_cls.load_from_checkpoint(
                     ckpt_path,
                     backbone_pth=backbone_pth,
                 map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-            ),
-            n_highest_peaks=n_highest_peaks
-        )
+                ),
+                n_highest_peaks=n_highest_peaks
+            )
+            if remove_unused_backbone_parameters:
+                model.model.backbone = cls.remove_unused_backbone_parameters(model.model.backbone)
+            return model
 
     @classmethod
     def from_name(cls, name: str):
@@ -365,11 +387,12 @@ class DreaMSAtlas:
 
         print('Initializing DreaMS Atlas data structures...')
         self.lib = du.MSData(
-            utils.gems_hf_download(
-                'DreaMS_Atlas/nist20_mona_clean_merged_spectra_dreams_hidden_nist20.hdf5',
-                local_dir=local_dir
-            ),
-            in_mem=False
+            local_dir / 'nist20_mona_clean_merged_spectra_dreams.hdf5',
+            # utils.gems_hf_download(
+            #     'DreaMS_Atlas/nist20_mona_clean_merged_spectra_dreams_hidden_nist20.hdf5',
+            #     local_dir=local_dir
+            # ),
+            # in_mem=False
         )
         print(f'Loaded spectral library ({len(self.lib):,} spectra).')
 
@@ -380,12 +403,14 @@ class DreaMSAtlas:
         print(f'Loaded GeMS-C1 dataset ({len(self.gems):,} spectra).')
 
         self.csrknn = du.CSRKNN.from_npz(
-            utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN.npz', local_dir=local_dir),
+            # utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN.npz', local_dir=local_dir),
+            local_dir / 'DreaMS_Atlas_3NN_with_nist.npz'
         )
         print(f'Loaded DreaMS Atlas edges ({self.csrknn.n_nodes:,} nodes and {self.csrknn.n_edges:,} edges).')
 
         self.dreams_clusters = pd.read_csv(
-            utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN_clusters.csv', local_dir=local_dir)
+            # utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN_clusters.csv', local_dir=local_dir)
+            local_dir / 'DreaMS_Atlas_3NN_clusters_with_nist.csv'
         )['clusters']
         print(f'Loaded DreaMS Atlas k-NN cluster representatives from GeMS-C1 ({self.dreams_clusters.nunique():,} representatives).')
 
