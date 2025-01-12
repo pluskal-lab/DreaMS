@@ -173,7 +173,15 @@ def load_hdf5_in_mem(dct):
 
 
 class MSData:
-    def __init__(self, hdf5_pth: Union[Path, str, List[Path]], in_mem=False, mode='r', spec_col=SPECTRUM, prec_mz_col=PRECURSOR_MZ):
+    def __init__(
+            self,
+            hdf5_pth: Union[Path, str, List[Path]],
+            in_mem: bool = False,
+            mode: str = 'r',
+            spec_col: str = SPECTRUM,
+            prec_mz_col: str = PRECURSOR_MZ,
+            index_col: Optional[str] = None
+        ):
         if isinstance(hdf5_pth, list):
             self.f = io.ChunkedHDF5File(hdf5_pth)
         else:
@@ -201,6 +209,11 @@ class MSData:
         if in_mem:
             print(f'Loading dataset {self.hdf5_pth.stem} into memory ({self.num_spectra} spectra)...')
             self.data = self.load_hdf5_in_mem(self.f)
+        
+        self.index_col = index_col
+        self.index_to_i = None
+        if index_col is not None:
+            self.use_col_as_index(index_col)
 
     def __del__(self):
         if hasattr(self, 'f') and isinstance(self.f, h5py.File):
@@ -208,7 +221,6 @@ class MSData:
 
     def columns(self):
         return list(self.data.keys())
-
 
     def load_col_in_mem(self, col):
         if isinstance(col, h5py.Group):
@@ -397,6 +409,15 @@ class MSData:
         return self.get_values(col)
 
     def at(self, i, plot_mol=True, plot_spec=True, return_spec=False, vals=None, unpad_spec=True):
+
+        if self.index_col is not None:
+            if i not in self.index_to_i:
+                raise ValueError(f'Index {i} is not present in the index.')
+            i = self.index_to_i[i]
+        else:
+            if i >= self.num_spectra:
+                raise ValueError(f'Index {i} is out of bounds for the dataset with {self.num_spectra} spectra.')
+
         if plot_spec:
             su.plot_spectrum(self.data[SPECTRUM][i], prec_mz=self.data[PRECURSOR_MZ][i])
         if plot_mol and SMILES in self.columns():
@@ -414,6 +435,11 @@ class MSData:
                 res[SPECTRUM] = su.unpad_peak_list(res[SPECTRUM])
 
         return res
+
+    def use_col_as_index(self, col):
+        if col not in self.columns():
+            raise ValueError(f'Column "{col}" is not present in the dataset.')
+        self.index_to_i = {i: idx for idx, i in enumerate(self.get_values(col))}
 
     def get_spectra(self, idx=None):
         return self.get_values(SPECTRUM, idx)
