@@ -9,6 +9,7 @@ from tqdm import tqdm
 from pathlib import Path
 from collections import deque
 from torch.utils.data.dataloader import DataLoader
+from argparse import Namespace
 import dreams.utils.data as du
 import dreams.utils.io as io
 import dreams.utils.dformats as dformats
@@ -39,19 +40,37 @@ class PreTrainedModel:
         ckpt_path: Path,
         ckpt_cls: T.Union[T.Type[DreaMSModel], T.Type[FineTuningHead]],
         n_highest_peaks: int,
-        remove_unused_backbone_parameters: bool = True
+        remove_unused_backbone_parameters: bool = True,
+        dreams_args: T.Optional[dict] = None
     ):
+        
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
         if ckpt_cls == DreaMSModel:
+
+            ckpt = ckpt_cls.load_from_checkpoint(ckpt_path, map_location=device)
+
+            # If DreaMS arguments are provided, reload the model with the updated arguments
+            # (first load is needed to get the original arguments)
+            if dreams_args is not None:
+                args_dict = vars(ckpt.hparams["args"])
+                args_dict.update(dreams_args)
+                ckpt = ckpt_cls.load_from_checkpoint(ckpt_path, map_location=device, args=Namespace(**args_dict))
+
             model = cls(
-                ckpt_cls.load_from_checkpoint(
-                    ckpt_path,
-                    map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-                )
+                ckpt,
+                n_highest_peaks=n_highest_peaks
             )
+
             if remove_unused_backbone_parameters:
                 model.model = cls.remove_unused_backbone_parameters(model.model)
+            
             return model
         else:
+
+            if dreams_args is not None:
+                raise NotImplementedError('Custom DreaMS arguments are currently not supported for fine-tuning heads')
+
             # Download backbone model if it doesn't exist
             backbone_pth = PRETRAINED / 'ssl_model.ckpt'
             if not backbone_pth.exists():
@@ -61,7 +80,7 @@ class PreTrainedModel:
                 ckpt_cls.load_from_checkpoint(
                     ckpt_path,
                     backbone_pth=backbone_pth,
-                map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                map_location=device
                 ),
                 n_highest_peaks=n_highest_peaks
             )
