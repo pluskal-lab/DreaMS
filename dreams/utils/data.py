@@ -415,6 +415,8 @@ class MSData:
                 raise ValueError(f'Index {i} is not present in the index.')
             i = self.index_to_i[i]
         else:
+            if not isinstance(i, int):
+                raise ValueError(f'Index {i} is not an integer.')
             if i >= self.num_spectra:
                 raise ValueError(f'Index {i} is out of bounds for the dataset with {self.num_spectra} spectra.')
 
