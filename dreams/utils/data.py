@@ -7,10 +7,12 @@ import umap
 import torch
 from torch import nn
 import random
+import pickle
 import igraph
 import networkx as nx
 import scipy
 # import spectral_entropy
+import pynndescent
 import plotly.graph_objects as go
 import torch.nn.functional as F
 import pytorch_lightning as pl
@@ -184,6 +186,7 @@ class MSData:
         ):
         if isinstance(hdf5_pth, list):
             self.f = io.ChunkedHDF5File(hdf5_pth)
+            self.hdf5_pth = hdf5_pth[0]
         else:
             self.hdf5_pth = Path(hdf5_pth)
             self.f = h5py.File(hdf5_pth, mode)
@@ -507,6 +510,25 @@ class MSData:
             self.spec_to_matchms(i)
             for i in tqdm(range(len(self)), desc='Converting to matchms', disable=not progress_bar)
         ]
+
+    def to_pynndescent(self, embedding_col=DREAMS_EMBEDDING, out_pth=None, n_neighbors=50, metric='cosine', verbose=True):
+        if embedding_col not in self.columns():
+            raise ValueError(f'Column "{embedding_col}" is not present in the dataset.')
+
+        index = pynndescent.NNDescent(
+            self.get_values(embedding_col),
+            n_neighbors=n_neighbors,
+            metric=metric,
+            verbose=verbose
+        )
+
+        if out_pth is None:
+            out_pth = self.hdf5_pth.with_suffix(f'.pynndescent{n_neighbors}.pkl')
+
+        with open(out_pth, "wb") as f:
+            pickle.dump(index, f)
+
+        return index
 
     @staticmethod
     def merge(
