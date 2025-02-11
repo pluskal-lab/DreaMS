@@ -615,6 +615,48 @@ class MSData:
         return f'MSData(pth={self.hdf5_pth}, in_mem={self.in_mem}) with {len(self):,} spectra.'
 
 
+def subset_lsh(
+        in_pth: Union[Path, str],
+        out_pth: Optional[Path] = None,
+        lsh_col: str = 'lsh',
+        max_specs_per_lsh: int = 1,
+        random_seed: int = 42
+    ):
+    if not isinstance(in_pth, Path):
+        in_pth = Path(in_pth)
+    if out_pth is None:
+        out_pth = io.append_to_stem(in_pth, f'{max_specs_per_lsh}')
+    print(f'Subsetting LSHs from {in_pth} to {out_pth}...')
+    
+    print(f'Loading dataset...')
+    msdata = MSData(in_pth, in_mem=True)
+    lshs = msdata.get_values(lsh_col)
+
+    if max_specs_per_lsh == 1:
+        # For max_specs_per_lsh=1, we can just take first occurrence of each unique LSH (fast)
+        print(f'Subsetting LSHs...')
+        _, idx = np.unique(lshs, return_index=True)
+        filtered_idx = np.sort(idx)
+    else:
+        # For max_specs_per_lsh > 1, we need to subset each LSH to max_specs_per_lsh (slow)
+        lshs_unique, lshs_counts = np.unique(lshs, return_counts=True)
+        filtered_idx = []
+        non_filtered_lshs = []
+        np.random.seed(random_seed)
+        for lsh, count in tqdm(zip(lshs_unique, lshs_counts), desc='Subsetting LSHs', total=len(lshs_unique)):
+            if count > max_specs_per_lsh:
+                idx = np.where(lshs == lsh)[0]
+                filtered_idx.extend(np.random.choice(idx, max_specs_per_lsh, replace=False))
+            else:
+                non_filtered_lshs.append(lsh)
+        filtered_idx.extend(np.where(np.isin(lshs, non_filtered_lshs))[0])
+        filtered_idx = np.sort(np.array(filtered_idx))
+
+    print(f'Saving LSH subset with {len(filtered_idx):,} spectra...')
+    msdata.form_subset(filtered_idx, out_pth)
+    return MSData(out_pth, in_mem=True)
+
+
 class MaskedSpectraDataset(Dataset):
     """
     A dataset class for masked spectra used in self-supervised learning tasks.
