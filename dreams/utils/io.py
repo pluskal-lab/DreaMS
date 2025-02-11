@@ -1200,6 +1200,8 @@ def clean_ftps(ftps: dict, verbose=True):
 
 
 def compress_hdf(hdf_pth, out_pth=None, compression='gzip', compression_opts=4):
+    if not isinstance(hdf_pth, Path):
+        hdf_pth = Path(hdf_pth)
     if out_pth is None:
         out_pth = append_to_stem(hdf_pth, 'compressed')
     with h5py.File(hdf_pth, 'r') as f:
