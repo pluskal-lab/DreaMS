@@ -511,7 +511,15 @@ class MSData:
             for i in tqdm(range(len(self)), desc='Converting to matchms', disable=not progress_bar)
         ]
 
-    def to_pynndescent(self, embedding_col=DREAMS_EMBEDDING, out_pth=None, n_neighbors=50, metric='cosine', verbose=True):
+    def to_pynndescent(
+            self,
+            embedding_col=DREAMS_EMBEDDING,
+            out_pth=None,
+            store_index=False,
+            n_neighbors=50,
+            metric='cosine',
+            verbose=True
+        ):
         if embedding_col not in self.columns():
             raise ValueError(f'Column "{embedding_col}" is not present in the dataset.')
 
@@ -522,11 +530,12 @@ class MSData:
             verbose=verbose
         )
 
-        if out_pth is None:
-            out_pth = self.hdf5_pth.with_suffix(f'.pynndescent{n_neighbors}.pkl')
+        if store_index:
+            if out_pth is None:
+                out_pth = self.hdf5_pth.with_suffix(f'.pynndescent{n_neighbors}.pkl')
 
-        with open(out_pth, "wb") as f:
-            pickle.dump(index, f)
+            with open(out_pth, "wb") as f:
+                pickle.dump(index, f)
 
         return index
 
