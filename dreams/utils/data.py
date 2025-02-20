@@ -382,7 +382,7 @@ class MSData:
             if unpad:
                 df[SPECTRUM] = [su.unpad_peak_list(s) for s in df[SPECTRUM]]
             
-            df[SPECTRUM] = df[SPECTRUM].apply(lambda x: x.tolist())
+            df[SPECTRUM] = [s.tolist() for s in df[SPECTRUM]]
 
         return pd.DataFrame(df)
     
