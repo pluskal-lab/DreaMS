@@ -274,6 +274,10 @@ class MSData:
             if hdf5_pth is None:
                 raise ValueError('`hdf5_pth` has to be specified if `df` is not a Path.')
 
+        # Check for empty dataset
+        if not len(df):
+            raise ValueError(f'Input dataset is empty (most likely doesn\'t contain MS2 spectra).')
+
         # Validate num. of peaks
         if n_highest_peaks is None:
             raise NotImplementedError('Not implemented yet. With this option, `n_highest_peaks` has to be set to max peaks in the dataset.')
