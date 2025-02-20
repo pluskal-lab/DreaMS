@@ -417,8 +417,11 @@ def read_mzml(pth: Union[Path, str], verbose=False):
 
     df = []
     automatic_scans_message = False
+    mslevels = []
     for i, spec in enumerate(tqdm(exp, desc=f'Reading {pth.name}', disable=not verbose)):
-        if spec.getMSLevel() != 2:
+        mslevel = spec.getMSLevel()
+        mslevels.append(mslevel)
+        if mslevel != 2:
             continue
 
         scan_i = re.search(r'scan=(\d+)', spec.getNativeID())
@@ -450,6 +453,9 @@ def read_mzml(pth: Union[Path, str], verbose=False):
             RT: spec.getRT(),
             CHARGE: prec.getCharge(),
         })
+
+    if verbose:
+        print('MS levels:', Counter(mslevels))
 
     df = pd.DataFrame(df)
     return df
