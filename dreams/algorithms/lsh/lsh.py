@@ -14,16 +14,20 @@ class RandomProjection:
 
     def compute(self, x: np.array, as_str=True, batched=False):
         if batched:
+            if x.ndim != 2:
+                raise ValueError(f'x must be 2D array, got {x.ndim}D array')
             proj_signs = np.einsum('ij,kj->ki', self.H, x) >= 0
             if as_str:
                 # Convert each row of the boolean array to bytes and hash using SHA-256
-                proj_signs = np.apply_along_axis(self.__arr_to_str_hash, 1, proj_signs)
+                proj_signs = np.apply_along_axis(self.__arr_to_str_hash, 1, proj_signs).astype('S64')
         else:
+            if x.ndim != 1:
+                raise ValueError(f'x must be 1D array, got {x.ndim}D array')
             proj_signs = self.H @ x >= 0
             if as_str:
                 proj_signs = self.__arr_to_str_hash(proj_signs)
 
-        return proj_signs.astype('S64')
+        return proj_signs
 
 
 class PeakListRandomProjection:
@@ -34,6 +38,8 @@ class PeakListRandomProjection:
         self.rand_projection = RandomProjection(n_elems=int(max_mz / bin_step), n_hyperplanes=n_hyperplanes, seed=seed)
 
     def compute(self, peak_list: np.array, as_str=True):
+        if peak_list.ndim != 2:
+            raise ValueError(f'peak_list must be 2D array, got {peak_list.ndim}D array')
         bpl = bin_peak_list(peak_list, self.max_mz, self.bin_step)
         return self.rand_projection.compute(bpl, as_str=as_str)
 
@@ -55,6 +61,9 @@ class BatchedPeakListRandomProjection(PeakListRandomProjection):
         return self.rand_projection.compute(bpls, as_str=as_str, batched=True)
 
     def compute(self, peak_lists: np.array, as_str=True, logger=None, progress_bar=True):
+        if peak_lists.ndim != 3:
+            raise ValueError(f'peak_lists must be 3D array, got {peak_lists.ndim}D array')
+
         n = peak_lists.shape[0]
         
         if not self.subbatch_size or self.subbatch_size >= n:
