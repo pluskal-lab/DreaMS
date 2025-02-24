@@ -28,7 +28,7 @@ from collections.abc import Iterable
 from rdkit import Chem
 from rdkit.Chem import DataStructs
 from tqdm import tqdm
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Tuple
 from sklearn import metrics
 from contextlib import contextmanager
 from collections import Counter
@@ -324,13 +324,21 @@ class MSData:
         return MSData(hdf5_pth, in_mem=in_mem, mode=mode)
 
     @staticmethod
-    def from_mzml(pth: Union[Path, str], **kwargs):
+    def from_mzml(
+        pth: Union[Path, str],
+        scan_range: Optional[Tuple[int, int]] = None,
+        verbose_parser: bool = False,
+        **kwargs
+    ):
         # TODO: use mzml reader from process_ms_file.py, move it here
         # TODO: refactor trimming and padding, no hard-coded 128
 
         pth = Path(pth)
-        df = io.read_mzml(pth)
-        return MSData.from_pandas(df, hdf5_pth=pth.with_suffix('.hdf5'), **kwargs)
+        df = io.read_mzml(pth, scan_range=scan_range, verbose=verbose_parser)
+        hdf5_pth = pth.with_suffix('.hdf5')
+        if scan_range:
+            hdf5_pth = io.append_to_stem(pth, f'scans_{scan_range[0]}-{scan_range[1]}')
+        return MSData.from_pandas(df, hdf5_pth=hdf5_pth, **kwargs)
 
     @staticmethod
     def from_msp(pth: Union[Path, str], in_mem=True, **kwargs):

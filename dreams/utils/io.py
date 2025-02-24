@@ -404,7 +404,7 @@ def read_mgf(pth, **kwargs):
     )
 
 
-def read_mzml(pth: Union[Path, str], verbose=False):
+def read_mzml(pth: Union[Path, str], verbose: bool = False, scan_range: Optional[Tuple[int, int]] = None):
     if isinstance(pth, str):
         pth = Path(pth)
     exp = oms.MSExperiment()
@@ -417,13 +417,14 @@ def read_mzml(pth: Union[Path, str], verbose=False):
 
     df = []
     automatic_scans_message = False
-    mslevels = []
     for i, spec in enumerate(tqdm(exp, desc=f'Reading {pth.name}', disable=not verbose)):
+
+        # Skip spectra that are not MS2
         mslevel = spec.getMSLevel()
-        mslevels.append(mslevel)
         if mslevel != 2:
             continue
 
+        # Get or assign scan numbers
         scan_i = re.search(r'scan=(\d+)', spec.getNativeID())
         if scan_i:
             scan_i = int(scan_i.group(1))
@@ -433,6 +434,10 @@ def read_mzml(pth: Union[Path, str], verbose=False):
             scan_i = i + 1
             automatic_scans_message = True
 
+        if scan_range and (scan_i < scan_range[0] or scan_i > scan_range[1]):
+            continue
+
+        # Get peak list and check for problems
         peak_list = np.stack(spec.get_peaks())
         spec_problems = su.is_valid_peak_list(peak_list, relative_intensities=False, return_problems_list=True, verbose=verbose)
         if spec_problems:
@@ -440,6 +445,7 @@ def read_mzml(pth: Union[Path, str], verbose=False):
                 print(f'Skipping spectrum {i} in {pth.name} with problems: {spec_problems}.')
             continue
 
+        # Get precursor metadata
         prec = spec.getPrecursors()
         if len(prec) != 1:
             continue
@@ -453,9 +459,10 @@ def read_mzml(pth: Union[Path, str], verbose=False):
             RT: spec.getRT(),
             CHARGE: prec.getCharge(),
         })
-
-    if verbose:
-        print('MS levels:', Counter(mslevels))
+    
+    if scan_range and verbose:
+        print(f'Read {len(df)} valid MS2 spectra with scan numbers in the range {scan_range}.'
+              f' Max scan number in the file: {scan_i}.')
 
     df = pd.DataFrame(df)
     return df
