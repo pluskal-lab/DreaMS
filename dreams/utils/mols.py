@@ -21,13 +21,13 @@ from pathlib import Path
 import dreams.utils.misc as utils
 
 
-def show_mols(mols, legends='new_indices', smiles_in=False, svg=False, sort_by_legend=False, max_mols=500,
+def show_mols(mols, legends='new_indices', smiles_in=None, svg=False, sort_by_legend=False, max_mols=500,
               legend_float_decimals=4, mols_per_row=6, save_pth: Optional[Path] = None):
     """
     Returns svg image representing a grid of skeletal structures of the given molecules
 
     :param mols: list of rdkit molecules
-    :param smiles_in: True - SMILES inputs, False - RDKit mols
+    :param smiles_in: True - SMILES inputs, False - RDKit mols, None - determine automatically
     :param legends: list of labels for each molecule, length must be equal to the length of mols
     :param svg: True - return svg image, False - return png image
     :param sort_by_legend: True - sort molecules by legend values
@@ -37,6 +37,9 @@ def show_mols(mols, legends='new_indices', smiles_in=False, svg=False, sort_by_l
     :param save_pth: path to save the .svg image to
     """
     disable_rdkit_log()
+
+    if smiles_in is None:
+        smiles_in = all(isinstance(e, str) for e in mols)
 
     if smiles_in:
         mols = [Chem.MolFromSmiles(e) for e in mols]
