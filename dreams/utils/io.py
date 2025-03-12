@@ -1227,6 +1227,37 @@ def compress_hdf(hdf_pth, out_pth=None, compression='gzip', compression_opts=4):
                 )
 
 
+def sample_hdf(hdf_pth, n_samples, out_pth=None, seed=333, compression='gzip', compression_opts=4):
+
+    with h5py.File(hdf_pth, 'r') as f:
+
+        dataset_len = set(len(f[k]) for k in f.keys())
+        if len(dataset_len) != 1:
+            raise ValueError("Not all datasets have the same length")
+        dataset_len = dataset_len.pop()
+
+        if n_samples > dataset_len:
+            raise ValueError(f"Cannot sample {n_samples} samples from a dataset of length {dataset_len}")
+
+        if out_pth is None:
+            out_pth = append_to_stem(hdf_pth, f'rand{n_samples}')
+
+        print(f'Sampling {n_samples} random spectra from {hdf_pth}...')
+        np.random.seed(seed)
+        sample_idx = np.random.choice(dataset_len, n_samples, replace=False)
+        sample_idx = np.sort(sample_idx)
+
+        with h5py.File(out_pth, 'w') as f_out:
+            for k in f.keys():
+                print(f'Sampling "{k}" dataset...')
+                f_out.create_dataset(
+                    k, data=f[k][:][sample_idx], shape=(n_samples, *f[k].shape[1:]), dtype=f[k].dtype,
+                    compression=compression, compression_opts=compression_opts
+                )
+
+        return out_pth
+
+
 class ChunkedHDF5File:
     def __init__(self, file_paths):
         """
