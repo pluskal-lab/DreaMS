@@ -3,6 +3,7 @@ import numpy as np
 import heapq
 import torch
 import os
+import urllib.request
 import typing as T
 import pandas as pd
 import networkx as nx
@@ -12,12 +13,25 @@ from typing import Sequence
 from huggingface_hub import hf_hub_download
 from pathlib import Path
 from dreams.definitions import PRETRAINED
+from tqdm import tqdm
 
 
 def download_pretrained_model(model_name: str = 'embedding_model.ckpt', download_dir: Path = PRETRAINED):
     target_path = download_dir / model_name
     url = 'https://zenodo.org/records/10997887/files/' + model_name
-    os.system(f'wget {url} -O {target_path}')
+    
+    # Create the download directory if it doesn't exist
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def download_with_progress(url, target_path):
+        with tqdm(unit='B', unit_scale=True, unit_divisor=1024, miniters=1, desc=f"Downloading {url.split('/')[-1]}") as pbar:
+            def report_hook(count, block_size, total_size):
+                if total_size != -1:
+                    pbar.total = total_size
+                pbar.update(block_size)
+            urllib.request.urlretrieve(url, target_path, reporthook=report_hook)
+            
+    download_with_progress(url, target_path)
     return target_path
 
 
