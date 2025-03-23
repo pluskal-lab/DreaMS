@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import itertools
 import urllib
 import json
@@ -27,8 +28,10 @@ def show_mols(mols, legends='new_indices', smiles_in=None, svg=False, sort_by_le
     Returns svg image representing a grid of skeletal structures of the given molecules
 
     :param mols: list of rdkit molecules
+    :param legends: list of labels for each molecule, length must be equal to the length of mols. 
+                   Can be 'new_indices' for default numbering, 'masses' for molecular weights,
+                   or a list of custom labels
     :param smiles_in: True - SMILES inputs, False - RDKit mols, None - determine automatically
-    :param legends: list of labels for each molecule, length must be equal to the length of mols
     :param svg: True - return svg image, False - return png image
     :param sort_by_legend: True - sort molecules by legend values
     :param max_mols: maximum number of molecules to show
@@ -50,6 +53,11 @@ def show_mols(mols, legends='new_indices', smiles_in=None, svg=False, sort_by_le
         legends = [ExactMolWt(m) for m in mols]
     elif callable(legends):
         legends = [legends(e) for e in mols]
+    elif isinstance(legends, (list, np.ndarray, pd.Series)):
+        legends = [str(l) for l in legends]
+    else:
+        raise ValueError(f'Invalid legends type: {type(legends)}. Must be a list, numpy array, pandas series or'
+                         '"new_indices" or "masses".')
 
     if sort_by_legend:
         idx = np.argsort(legends).tolist()
