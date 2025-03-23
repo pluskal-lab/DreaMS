@@ -47,10 +47,11 @@ def show_mols(mols, legends='new_indices', smiles_in=None, svg=False, sort_by_le
     if smiles_in:
         mols = [Chem.MolFromSmiles(e) for e in mols]
 
-    if legends == 'new_indices':
-        legends = list(range(len(mols)))
-    elif legends == 'masses':
-        legends = [ExactMolWt(m) for m in mols]
+    if isinstance(legends, str):
+        if legends == 'new_indices':
+            legends = list(range(len(mols)))
+        elif legends == 'masses':
+            legends = [ExactMolWt(m) for m in mols]
     elif callable(legends):
         legends = [legends(e) for e in mols]
     elif isinstance(legends, (list, np.ndarray, pd.Series)):
