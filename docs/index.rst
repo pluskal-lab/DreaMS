@@ -27,6 +27,7 @@ Contents
    tutorials/lsh_clustering
    tutorials/spectral_quality
    tutorials/atlas
+   tutorials/pre_trained_module
 
 .. toctree::
    :maxdepth: 2
