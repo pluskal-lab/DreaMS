@@ -177,7 +177,7 @@ class DataFormatBuilder:
 def assign_dformat(spec: np.ndarray, prec_mz: float, **kwargs) -> str:
     for e in ['A', 'B', 'C']:
         dformat = DataFormatBuilder(e).get_dformat()
-        if dformat.val_spec(spec, prec_mz,**kwargs):
+        if dformat.val_spec(spec, prec_mz, **kwargs):
             return e
     return '-'
 

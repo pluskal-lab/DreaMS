@@ -25,6 +25,7 @@ Contents
    tutorials/library_matching
    tutorials/networking
    tutorials/lsh_clustering
+   tutorials/spectral_quality
    tutorials/atlas
 
 .. toctree::
