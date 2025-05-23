@@ -33,7 +33,7 @@ Additionally, for further research and development:
 - 🔄 Convert conventional MS/MS data formats into our new, **ML-friendly HDF5-based format**.
 - 📊 Split MS/MS datasets into training and validation folds using **Murcko histograms** of molecular structures.
 
-📚 Please refer our [documentation](https://dreams-docs.readthedocs.io/) and paper ["Emergence of molecular structures from repository-scale self-supervised learning on tandem mass spectra"](https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f) for more details.
+📚 Please refer our [documentation](https://dreams-docs.readthedocs.io/) and paper ["Self-supervised learning of molecular representations from millions of tandem mass spectra using DreaMS"](https://www.nature.com/articles/s41587-025-02663-3) for more details.
 
 ## Getting started
 
