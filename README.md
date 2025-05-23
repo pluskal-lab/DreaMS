@@ -79,7 +79,7 @@ The resulting `embs` object is a matrix with 5 rows and 1024 columns, representi
 If you use DreaMS in your research, please cite the following paper:
 
 ```bibtex
-@article{bushuiev2024emergence,
+@article{bushuiev2024selfsupervised,
   author={Bushuiev, Roman
   and Bushuiev, Anton
   and Samusevich, Raman
