@@ -68,7 +68,8 @@ The resulting `embs` object is a matrix with 5 rows and 1024 columns, representi
 
 ## References
 
-- Paper: [https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f](https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f).
+- Paper: [https://www.nature.com/articles/s41587-025-02663-3](https://www.nature.com/articles/s41587-025-02663-3).
+- Pre-print: [https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f](https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f).
 - Documentation and tutorials: [https://dreams-docs.readthedocs.io/](https://dreams-docs.readthedocs.io/).
 - Weights of pre-trained models: [https://zenodo.org/records/10997887](https://zenodo.org/records/10997887).
 - Datasets:
