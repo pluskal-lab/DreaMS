@@ -1083,9 +1083,24 @@ class RawSpectraDataset(Dataset):
         spectrum = self.spec_preproc(self.spectra[i], prec_mz=self.prec_mzs[i], high_form=False)
         return {SPECTRUM: spectrum, PRECURSOR_MZ: self.prec_mzs[i]}
 
-    # @abstractmethod
-    # def add_preds(self, labels, labels_name):
-    #     pass
+
+class MatchmsSpectraDataset(Dataset):
+    def __init__(self, spectra: List[Spectrum], spec_preproc: SpectrumPreprocessor):
+        self.spectra = spectra
+        self.spec_preproc = spec_preproc
+
+    def __len__(self):
+        return len(self.spectra)
+
+    def __getitem__(self, i):
+        spec = self.spectra[i]
+        prec_mz = spec.metadata['precursor_mz']
+
+        # Convert matchms spectrum to numpy array and preprocess
+        spec = np.vstack([spec.peaks.mz, spec.peaks.intensities])       
+        spec = self.spec_preproc(spec, prec_mz=prec_mz, high_form=False)
+
+        return {SPECTRUM: spec, PRECURSOR_MZ: prec_mz}
 
 
 # class RawPandasSpectraDataset(RawSpectraDataset):
