@@ -512,7 +512,7 @@ class MSData:
 
     def spec_to_matchms(self, i: int) -> Spectrum:
         spec = su.unpad_peak_list(self.get_spectra(i))
-        metadata = self.at(i, plot=False, return_spec=False)
+        metadata = self.at(i, plot_mol=False, plot_spec=False, return_spec=False)
         return Spectrum(
             mz=spec[0],
             intensities=spec[1],
