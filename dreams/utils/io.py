@@ -1107,14 +1107,22 @@ def lsh_subset(in_pth, dformat, n_hplanes=None, bin_size=1, max_specs_per_lsh=No
     return out_pth
 
 
-def save_nist_like_df_to_mgf(df, out_pth: Path, remove_mol_info=False):
+def read_json_spec(pth, peaks_key="peaks", prec_mz_key="precursor_mz"):
+    spec = json.load(open(pth))
+    return {
+        SPECTRUM: np.array(spec[peaks_key]).T,
+        PRECURSOR_MZ: spec[prec_mz_key]
+    }
+
+
+def save_nist_like_df_to_mgf(df, out_pth: Path, remove_mol_info=False, all_mplush_adducts=False):
     spectra = []
     for i, row in tqdm(df.iterrows()):
         spec = {
             'm/z array': row['PARSED PEAKS'][0],
             'intensity array': row['PARSED PEAKS'][1],
             'params': {
-                'adduct': row['PRECURSOR TYPE'],
+                'adduct': row['PRECURSOR TYPE'] if not all_mplush_adducts else '[M+H]+',
                 'collision energy': int(row['COLLISION ENERGY']),
                 'pepmass': row['PRECURSOR M/Z'],
                 'charge': row['CHARGE'],
