@@ -20,10 +20,12 @@ from dreams.models.heads.heads import *
 from dreams.definitions import *
 
 
+if platform.system() == 'Windows':
+    pathlib.PosixPath = pathlib.WindowsPath
+
+
 class PreTrainedModel:
     def __init__(self, model: T.Union[DreaMSModel, FineTuningHead], n_highest_peaks: int = 100):
-        if platform.system() == 'Windows':
-            pathlib.PosixPath = pathlib.WindowsPath
         self.model = model.eval()
         self.n_highest_peaks = n_highest_peaks
 
@@ -46,7 +48,7 @@ class PreTrainedModel:
         remove_unused_backbone_parameters: bool = True,
         dreams_args: T.Optional[dict] = None
     ):
-        
+
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         if ckpt_cls == DreaMSModel:
