@@ -1,5 +1,6 @@
 import sys
 import h5py
+import platform
 import torch
 import pandas as pd
 import typing as T
@@ -21,6 +22,8 @@ from dreams.definitions import *
 
 class PreTrainedModel:
     def __init__(self, model: T.Union[DreaMSModel, FineTuningHead], n_highest_peaks: int = 100):
+        if platform.system() == 'Windows':
+            pathlib.PosixPath = pathlib.WindowsPath
         self.model = model.eval()
         self.n_highest_peaks = n_highest_peaks
 
