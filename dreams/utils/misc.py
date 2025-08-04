@@ -24,7 +24,7 @@ def download_pretrained_model(model_name: str = 'embedding_model.ckpt', download
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
     def download_with_progress(url, target_path):
-        with tqdm(unit='B', unit_scale=True, unit_divisor=1024, miniters=1, desc=f"Downloading {url.split('/')[-1]} to {target_path}") as pbar:
+        with tqdm(unit='B', unit_scale=True, unit_divisor=1024, miniters=1, desc=f"Downloading {url.split('/')[-1]} to {target_path.parent}") as pbar:
             def report_hook(count, block_size, total_size):
                 if total_size != -1:
                     pbar.total = total_size
