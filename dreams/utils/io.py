@@ -407,7 +407,7 @@ def read_mgf(pth, **kwargs):
         spectrum_end_line='END IONS',
         name_value_sep='=',
         prec_mz_name='PEPMASS',
-        rt_name='RTINSECONDS',
+        rt_name='RETENTION_TIME',
         feature_id_name='FEATURE_ID',
         ignore_line_prefixes=('#',),
         **kwargs
