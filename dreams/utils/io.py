@@ -323,12 +323,12 @@ def read_textual_ms_format(
         pth,
         spectrum_end_line,
         name_value_sep,
-        prec_mz_name,
-        charge_name='CHARGE',
-        adduct_name='ADDUCT',
-        smiles_name='SMILES',
-        rt_name=None,
-        feature_id_name=None,
+        prec_mz_name=['PEPMASS', 'PRECURSORMZ', 'PRECURSOR_MZ'],
+        charge_name=['CHARGE'],
+        adduct_name=['ADDUCT'],
+        smiles_name=['SMILES'],
+        rt_name=['RTINSECONDS', 'RETENTION_TIME', 'RTINMINUTES', 'RT'],
+        feature_id_name=['FEATURE_ID', 'SCAN_NUMBER'],
         ignore_line_prefixes=(),
         encoding='utf-8',
     ):
@@ -336,13 +336,28 @@ def read_textual_ms_format(
 
     # Two numbers separated with a white space
     peak_pattern = re.compile(r'\b([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\s([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\b')
+
     # A word followed by an arbitrary string separated with `name_value_sep`
     attr_pattern = re.compile(rf'^\s*([A-Z_]+){name_value_sep}(.*)\s*$')
-    attr_mapping = {prec_mz_name: PRECURSOR_MZ, charge_name: CHARGE, adduct_name: ADDUCT, smiles_name: SMILES}
+    attr_mapping = {}
+    if prec_mz_name:
+        for prec_mz_name_i in prec_mz_name:
+            attr_mapping[prec_mz_name_i] = PRECURSOR_MZ
+    if charge_name:
+        for charge_name_i in charge_name:
+            attr_mapping[charge_name_i] = CHARGE
+    if adduct_name:
+        for adduct_name_i in adduct_name:
+            attr_mapping[adduct_name_i] = ADDUCT
+    if smiles_name:
+        for smiles_name_i in smiles_name:
+            attr_mapping[smiles_name_i] = SMILES
     if rt_name:
-        attr_mapping[rt_name] = RT
+        for rt_name_i in rt_name:
+            attr_mapping[rt_name_i] = RT
     if feature_id_name:
-        attr_mapping[feature_id_name] = SCAN_NUMBER  # Here it is a scan number, not a feature id, to be consistent with mzml reader
+        for feature_id_name_i in feature_id_name:
+            attr_mapping[feature_id_name_i] = SCAN_NUMBER  # Here it is a scan number, not a feature id, to be consistent with mzml reader
 
     data = []
     with open(pth, 'r', encoding=encoding) as f:
@@ -393,7 +408,6 @@ def read_msp(pth, **kwargs):
         pth=pth,
         spectrum_end_line='',
         name_value_sep=': ',
-        prec_mz_name='PRECURSORMZ',
         rt_name=None,
         feature_id_name=None,
         ignore_line_prefixes=('#',),
@@ -406,9 +420,6 @@ def read_mgf(pth, **kwargs):
         pth=pth,
         spectrum_end_line='END IONS',
         name_value_sep='=',
-        prec_mz_name='PEPMASS',
-        rt_name='RETENTION_TIME',
-        feature_id_name='FEATURE_ID',
         ignore_line_prefixes=('#',),
         **kwargs
     )
