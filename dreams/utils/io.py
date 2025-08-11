@@ -327,6 +327,8 @@ def read_textual_ms_format(
         charge_name='CHARGE',
         adduct_name='ADDUCT',
         smiles_name='SMILES',
+        rt_name=None,
+        feature_id_name=None,
         ignore_line_prefixes=(),
         encoding='utf-8',
     ):
@@ -337,6 +339,10 @@ def read_textual_ms_format(
     # A word followed by an arbitrary string separated with `name_value_sep`
     attr_pattern = re.compile(rf'^\s*([A-Z_]+){name_value_sep}(.*)\s*$')
     attr_mapping = {prec_mz_name: PRECURSOR_MZ, charge_name: CHARGE, adduct_name: ADDUCT, smiles_name: SMILES}
+    if rt_name:
+        attr_mapping[rt_name] = RT
+    if feature_id_name:
+        attr_mapping[feature_id_name] = SCAN_NUMBER  # Here it is a scan number, not a feature id, to be consistent with mzml reader
 
     data = []
     with open(pth, 'r', encoding=encoding) as f:
@@ -388,6 +394,8 @@ def read_msp(pth, **kwargs):
         spectrum_end_line='',
         name_value_sep=': ',
         prec_mz_name='PRECURSORMZ',
+        rt_name=None,
+        feature_id_name=None,
         ignore_line_prefixes=('#',),
         **kwargs
     )
@@ -399,6 +407,8 @@ def read_mgf(pth, **kwargs):
         spectrum_end_line='END IONS',
         name_value_sep='=',
         prec_mz_name='PEPMASS',
+        rt_name='RTINSECONDS',
+        feature_id_name='FEATURE_ID',
         ignore_line_prefixes=('#',),
         **kwargs
     )
