@@ -323,6 +323,7 @@ def read_textual_ms_format(
         pth,
         spectrum_end_line,
         name_value_sep,
+        spectrum_start_line=None,  # If None, first not ignored line is considered to be the start of the first spectrum
         prec_mz_name=['PEPMASS', 'PRECURSORMZ', 'PRECURSOR_MZ'],
         charge_name=['CHARGE'],
         adduct_name=['ADDUCT'],
@@ -363,21 +364,28 @@ def read_textual_ms_format(
     with open(pth, 'r', encoding=encoding) as f:
         lines = f.readlines()
 
-        # TODO?
+        # TODO for msp?
         # if lines[-1] != spectrum_end_line:
         #     lines.append(spectrum_end_line)
 
+    started_reading_spectra = False
     for i, line in enumerate(lines):
 
-        if any([line.startswith(p) for p in ignore_line_prefixes]):
-            continue
-        elif line.rstrip() == spectrum_end_line or i == 0:
-            if i != 0:
-                spec[SPECTRUM] = np.array(spec[SPECTRUM])
-                data.append(spec)
+        # Potentially mgf files can start with some metadata before the first spectrum
+        if (spectrum_start_line is None and i == 0) or (spectrum_start_line is not None and line.startswith(spectrum_start_line)):
+            started_reading_spectra = True
             spec = {SPECTRUM: [[], []]}
-            if i != 0:
-                continue
+
+        # Skip lines that are not part of the spectrum or comments
+        if not started_reading_spectra or any([line.startswith(p) for p in ignore_line_prefixes]):
+            continue
+
+        # End of spectrum
+        if line.rstrip() == spectrum_end_line:
+            spec[SPECTRUM] = np.array(spec[SPECTRUM])
+            data.append(spec)
+            spec = {SPECTRUM: [[], []]}
+            continue
 
         # Attributes parsing
         match = attr_pattern.match(line)
@@ -421,6 +429,7 @@ def read_mgf(pth, **kwargs):
         spectrum_end_line='END IONS',
         name_value_sep='=',
         ignore_line_prefixes=('#',),
+        spectrum_start_line='BEGIN IONS',
         **kwargs
     )
 
