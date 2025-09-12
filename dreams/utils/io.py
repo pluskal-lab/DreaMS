@@ -397,6 +397,14 @@ def read_textual_ms_format(
                     v = int(v)
             if k in attr_mapping:
                 k = attr_mapping[k]
+
+            # If numberic attribute was not parsed to float, try to parse the first number in its space-separated string
+            if k in [PRECURSOR_MZ, RT] and isinstance(v, str):
+                v = v.split(' ')[0]
+                if not utils.is_float(v):
+                    raise ValueError(f'Invalid value for {k}: {v}')
+                v = float(v)
+
             spec[k] = v
             continue
 
