@@ -10,6 +10,7 @@
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-b31b1b.svg" height="22px"></a>
   <a href="https://www.python.org/downloads/release/python-3110/"><img src="https://img.shields.io/badge/Python-3.11-blue.svg" height="22px"></a>
   <a href="https://pytorch.org/get-started/pytorch-2.0/"><img src="https://img.shields.io/badge/PyTorch-2.0.8-orange.svg" height="22px"></a>
+  <a href="https://huggingface.co/spaces/anton-bushuiev/DreaMS"><img src="https://img.shields.io/badge/Web app-DreaMS-green.svg" height="22px"></a>
   <a href="https://huggingface.co/datasets/roman-bushuiev/GeMS/tree/main/data"> <img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md-dark.svg" height="22px"></a>
   <a href="https://huggingface.co/roman-bushuiev/DreaMS"> <img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md-dark.svg" height="22px"></a>
   <a href="https://zenodo.org/records/10997887"><img src="https://img.shields.io/badge/Model weights-10997887-blue.svg" height="22px"></a>
@@ -20,23 +21,30 @@
   <img src="https://raw.githubusercontent.com/pluskal-lab/DreaMS/b577db12bc8ec0c2010d10854f528007fcc2db2d/assets/dreams_background.png"/>
 </p>
 
-DreaMS (Deep Representations Empowering the Annotation of Mass Spectra) is a transformer-based neural network designed to interpret tandem mass spectrometry (MS/MS) data. Pre-trained in a self-supervised way on millions of unannotated spectra from our new GeMS (GNPS Experimental Mass Spectra) dataset, DreaMS acquires rich molecular representations by predicting masked spectral peaks and chromatographic retention orders. When fine-tuned for tasks such as spectral similarity, chemical properties prediction, and fluorine detection, DreaMS achieves state-of-the-art performance across various mass spectrometry interpretation tasks. The DreaMS Atlas, a comprehensive molecular network comprising 201 million MS/MS spectra annotated with DreaMS representations, along with pre-trained models and training datasets, is publicly accessible for further research and development. 🚀
+DreaMS (Deep Representations Empowering the Annotation of Mass Spectra) is a transformer-based neural network designed to interpret tandem mass spectrometry (MS/MS) data. Pre-trained in a self-supervised way on millions of unannotated spectra from our new GeMS (GNPS Experimental Mass Spectra) dataset, DreaMS acquires rich molecular representations by predicting masked spectral peaks and chromatographic retention orders. When fine-tuned for tasks such as spectral similarity, chemical properties prediction, and fluorine detection, DreaMS achieves state-of-the-art performance across various mass spectrometry interpretation tasks. The DreaMS Atlas, a comprehensive molecular network comprising 201 million MS/MS spectra annotated with DreaMS representations, along with pre-trained models and training datasets, is publicly accessible for further research and development.
 
 This repository provides the code and tutorials to:
 
-- 🔥 Generate **DreaMS representations** of MS/MS spectra and utilize them for downstream tasks such as spectral similarity prediction or molecular networking.
-- 🤖 **Fine-tune DreaMS** for your specific tasks of interest.
-- 💎 Access and utilize the extensive **GeMS dataset** of unannotated MS/MS spectra.
-- 🌐 Explore the **DreaMS Atlas**, a molecular network of 201 million MS/MS spectra from diverse MS experiments annotated with DreaMS representations and metadata, such as studied species, experiment descriptions, etc.
+- ⭐ Generate **DreaMS representations** of MS/MS spectra and utilize them for downstream tasks such as spectral similarity prediction or molecular networking.
+- ⭐ **Fine-tune DreaMS** for your specific tasks of interest.
+- ⭐ Access and utilize the extensive **GeMS dataset** of unannotated MS/MS spectra.
+- ⭐ Explore the **DreaMS Atlas**, a molecular network of 201 million MS/MS spectra from diverse MS experiments annotated with DreaMS representations and metadata, such as studied species, experiment descriptions, etc.
 - ⭐ Efficiently **cluster MS/MS spectra** in linear time using locality-sensitive hashing (LSH).
 
 Additionally, for further research and development:
-- 🔄 Convert conventional MS/MS data formats into our new, **ML-friendly HDF5-based format**.
-- 📊 Split MS/MS datasets into training and validation folds using **Murcko histograms** of molecular structures.
+- ⭐ Convert conventional MS/MS data formats into our new, **ML-friendly HDF5-based format**.
+- ⭐ Split MS/MS datasets into training and validation folds using **Murcko histograms** of molecular structures.
 
 📚 Please refer our [tutorials/documentation](https://dreams-docs.readthedocs.io/) and paper ["Self-supervised learning of molecular representations from millions of tandem mass spectra using DreaMS"](https://www.nature.com/articles/s41587-025-02663-3) for more details.
 
-## Getting started
+## Web app on Hugging Face Spaces 🤗
+
+A simple web app is available on [Hugging Face Spaces](https://huggingface.co/spaces/anton-bushuiev/DreaMS). You can use the app to perform spectral library
+matching for your MS/MS spectra based on DreaMS embedding similarity in one click.
+
+![screenshot_gradio](assets/screenshot_gradio.png)
+
+## Getting started locally
 
 ### Installation
 Run the following code from the command line.
@@ -71,6 +79,7 @@ The resulting `embs` object is a matrix with 5 rows and 1024 columns, representi
 
 - Paper: [https://www.nature.com/articles/s41587-025-02663-3](https://www.nature.com/articles/s41587-025-02663-3).
 - Pre-print: [https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f](https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f).
+- Web app on Hugging Face Spaces: [https://huggingface.co/spaces/anton-bushuiev/DreaMS](https://huggingface.co/spaces/anton-bushuiev/DreaMS).
 - Documentation and tutorials: [https://dreams-docs.readthedocs.io/](https://dreams-docs.readthedocs.io/).
 - Weights of pre-trained models: [https://zenodo.org/records/10997887](https://zenodo.org/records/10997887).
 - Datasets:

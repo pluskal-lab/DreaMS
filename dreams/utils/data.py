@@ -257,6 +257,8 @@ class MSData:
         adduct_col=ADDUCT,
         charge_col=CHARGE,
         mol_col=SMILES,
+        rt_col=RT,
+        feature_id_col=SCAN_NUMBER,
         ignore_cols=(),
         in_mem=True,
         hdf5_pth=None,
@@ -309,6 +311,10 @@ class MSData:
                         k = ADDUCT
                     elif k == charge_col:
                         k = CHARGE
+                    elif k == rt_col:
+                        k = RT
+                    elif k == feature_id_col:
+                        k = SCAN_NUMBER
                     elif k == mol_col:
                         k = SMILES
                         if isinstance(v[0], str) and v[0].startswith('InChI='):
@@ -402,10 +408,12 @@ class MSData:
         spectra = []
         df = self.to_pandas()
         for _, row in tqdm(df.iterrows(), total=len(df), desc='Converting to matchms before saving to mgf'):
+            metadata = {k: v for k, v in row.items() if k != SPECTRUM and v is not None and not pd.isna(v)}
+            metadata['PEPMASS'] = row[PRECURSOR_MZ]
             spec = Spectrum(
-                mz=row[SPECTRUM][0],
-                intensities=row[SPECTRUM][1],
-                metadata={k: v for k, v in row.items() if k != SPECTRUM and v is not None and not pd.isna(v)}
+                mz=np.array(row[SPECTRUM][0]),
+                intensities=np.array(row[SPECTRUM][1]),
+                metadata=metadata
             )
             spectra.append(spec)
         save_as_mgf(spectra, str(out_pth))
