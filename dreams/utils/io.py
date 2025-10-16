@@ -1035,7 +1035,7 @@ def merge_lcmsms_hdf5s(
                     (FILE_NAME, [in_pth.stem] * n_spectra, h5py.string_dtype())
                 ]
                 datasets.extend(
-                    [(n, f_in['MSn data'][n][:][idx], f_in['MSn data'][n].dtype) for n in [CHARGE, 'precursor mz', RT]]
+                    [(n, f_in['MSn data'][n][:][idx], f_in['MSn data'][n].dtype) for n in [CHARGE, PRECURSOR_MZ, RT]]
                 )
                 if store_acc_est:
                     datasets.append(
