@@ -1,5 +1,6 @@
 import sys
 import h5py
+import platform
 import torch
 import pandas as pd
 import typing as T
@@ -17,6 +18,10 @@ import dreams.utils.misc as utils
 from dreams.models.dreams.dreams import DreaMS as DreaMSModel
 from dreams.models.heads.heads import *
 from dreams.definitions import *
+
+
+if platform.system() == 'Windows':
+    pathlib.PosixPath = pathlib.WindowsPath
 
 
 class PreTrainedModel:
@@ -43,7 +48,7 @@ class PreTrainedModel:
         remove_unused_backbone_parameters: bool = True,
         dreams_args: T.Optional[dict] = None
     ):
-        
+
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         if ckpt_cls == DreaMSModel:

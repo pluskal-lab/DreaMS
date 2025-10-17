@@ -323,10 +323,13 @@ def read_textual_ms_format(
         pth,
         spectrum_end_line,
         name_value_sep,
-        prec_mz_name,
-        charge_name='CHARGE',
-        adduct_name='ADDUCT',
-        smiles_name='SMILES',
+        spectrum_start_line=None,  # If None, first not ignored line is considered to be the start of the first spectrum
+        prec_mz_name=['PEPMASS', 'PRECURSORMZ', 'PRECURSOR_MZ'],
+        charge_name=['CHARGE'],
+        adduct_name=['ADDUCT'],
+        smiles_name=['SMILES'],
+        rt_name=['RTINSECONDS', 'RETENTION_TIME', 'RTINMINUTES', 'RT'],
+        feature_id_name=['FEATURE_ID', 'SCAN_NUMBER'],
         ignore_line_prefixes=(),
         encoding='utf-8',
     ):
@@ -334,29 +337,55 @@ def read_textual_ms_format(
 
     # Two numbers separated with a white space
     peak_pattern = re.compile(r'\b([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\s([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\b')
+
     # A word followed by an arbitrary string separated with `name_value_sep`
     attr_pattern = re.compile(rf'^\s*([A-Z_]+){name_value_sep}(.*)\s*$')
-    attr_mapping = {prec_mz_name: PRECURSOR_MZ, charge_name: CHARGE, adduct_name: ADDUCT, smiles_name: SMILES}
+    attr_mapping = {}
+    if prec_mz_name:
+        for prec_mz_name_i in prec_mz_name:
+            attr_mapping[prec_mz_name_i] = PRECURSOR_MZ
+    if charge_name:
+        for charge_name_i in charge_name:
+            attr_mapping[charge_name_i] = CHARGE
+    if adduct_name:
+        for adduct_name_i in adduct_name:
+            attr_mapping[adduct_name_i] = ADDUCT
+    if smiles_name:
+        for smiles_name_i in smiles_name:
+            attr_mapping[smiles_name_i] = SMILES
+    if rt_name:
+        for rt_name_i in rt_name:
+            attr_mapping[rt_name_i] = RT
+    if feature_id_name:
+        for feature_id_name_i in feature_id_name:
+            attr_mapping[feature_id_name_i] = SCAN_NUMBER  # Here it is a scan number, not a feature id, to be consistent with mzml reader
 
     data = []
     with open(pth, 'r', encoding=encoding) as f:
         lines = f.readlines()
 
-        # TODO?
+        # TODO for msp?
         # if lines[-1] != spectrum_end_line:
         #     lines.append(spectrum_end_line)
 
+    started_reading_spectra = False
     for i, line in enumerate(lines):
 
-        if any([line.startswith(p) for p in ignore_line_prefixes]):
-            continue
-        elif line.rstrip() == spectrum_end_line or i == 0:
-            if i != 0:
-                spec[SPECTRUM] = np.array(spec[SPECTRUM])
-                data.append(spec)
+        # Potentially mgf files can start with some metadata before the first spectrum
+        if (spectrum_start_line is None and i == 0) or (spectrum_start_line is not None and line.startswith(spectrum_start_line)):
+            started_reading_spectra = True
             spec = {SPECTRUM: [[], []]}
-            if i != 0:
-                continue
+
+        # Skip lines that are not part of the spectrum or comments
+        if not started_reading_spectra or any([line.startswith(p) for p in ignore_line_prefixes]):
+            continue
+
+        # End of spectrum
+        if line.rstrip() == spectrum_end_line:
+            spec[SPECTRUM] = np.array(spec[SPECTRUM])
+            data.append(spec)
+            spec = {SPECTRUM: [[], []]}
+            continue
 
         # Attributes parsing
         match = attr_pattern.match(line)
@@ -368,6 +397,14 @@ def read_textual_ms_format(
                     v = int(v)
             if k in attr_mapping:
                 k = attr_mapping[k]
+
+            # If numberic attribute was not parsed to float, try to parse the first number in its space-separated string
+            if k in [PRECURSOR_MZ, RT] and isinstance(v, str):
+                v = v.split(' ')[0]
+                if not utils.is_float(v):
+                    raise ValueError(f'Invalid value for {k}: {v}')
+                v = float(v)
+
             spec[k] = v
             continue
 
@@ -387,7 +424,8 @@ def read_msp(pth, **kwargs):
         pth=pth,
         spectrum_end_line='',
         name_value_sep=': ',
-        prec_mz_name='PRECURSORMZ',
+        rt_name=None,
+        feature_id_name=None,
         ignore_line_prefixes=('#',),
         **kwargs
     )
@@ -398,8 +436,8 @@ def read_mgf(pth, **kwargs):
         pth=pth,
         spectrum_end_line='END IONS',
         name_value_sep='=',
-        prec_mz_name='PEPMASS',
         ignore_line_prefixes=('#',),
+        spectrum_start_line='BEGIN IONS',
         **kwargs
     )
 
@@ -1007,7 +1045,7 @@ def merge_lcmsms_hdf5s(
                     (FILE_NAME, [in_pth.stem] * n_spectra, h5py.string_dtype())
                 ]
                 datasets.extend(
-                    [(n, f_in['MSn data'][n][:][idx], f_in['MSn data'][n].dtype) for n in [CHARGE, 'precursor mz', RT]]
+                    [(n, f_in['MSn data'][n][:][idx], f_in['MSn data'][n].dtype) for n in [CHARGE, PRECURSOR_MZ, RT]]
                 )
                 if store_acc_est:
                     datasets.append(
@@ -1117,14 +1155,22 @@ def lsh_subset(in_pth, dformat, n_hplanes=None, bin_size=1, max_specs_per_lsh=No
     return out_pth
 
 
-def save_nist_like_df_to_mgf(df, out_pth: Path, remove_mol_info=False):
+def read_json_spec(pth, peaks_key="peaks", prec_mz_key="precursor_mz"):
+    spec = json.load(open(pth))
+    return {
+        SPECTRUM: np.array(spec[peaks_key]).T,
+        PRECURSOR_MZ: spec[prec_mz_key]
+    }
+
+
+def save_nist_like_df_to_mgf(df, out_pth: Path, remove_mol_info=False, all_mplush_adducts=False):
     spectra = []
     for i, row in tqdm(df.iterrows()):
         spec = {
             'm/z array': row['PARSED PEAKS'][0],
             'intensity array': row['PARSED PEAKS'][1],
             'params': {
-                'adduct': row['PRECURSOR TYPE'],
+                'adduct': row['PRECURSOR TYPE'] if not all_mplush_adducts else '[M+H]+',
                 'collision energy': int(row['COLLISION ENERGY']),
                 'pepmass': row['PRECURSOR M/Z'],
                 'charge': row['CHARGE'],
