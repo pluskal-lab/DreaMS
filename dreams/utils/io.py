@@ -478,7 +478,6 @@ def read_mzml(pth: Union[Path, str], verbose: bool = False, scan_range: Optional
         # Get peak list and check for problems
         peak_list = np.stack(spec.get_peaks())
         spec_problems = su.is_valid_peak_list(peak_list, relative_intensities=False, return_problems_list=True, verbose=verbose)
-        print(spec_problems)
         if spec_problems:
             if verbose:
                 print(f'Skipping spectrum {i} in {pth.name} with problems: {spec_problems}.')
