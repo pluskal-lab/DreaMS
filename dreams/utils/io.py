@@ -518,7 +518,9 @@ def lcmsms_to_hdf5(
     del_in=False,
     assign_dformats=True,
     log_path=None,
-    verbose=False
+    verbose=False,
+    only_msn=False,
+    only_format=None
     ):
     """
     Convert LC-MS/MS data from an input file (.mzML or .mzXML) to an output file (.hdf5).
@@ -580,7 +582,9 @@ def lcmsms_to_hdf5(
             num_peaks=num_peaks,
             num_prec_peaks=num_prec_peaks,
             compress_peaks_lvl=compress_peaks_lvl,
-            compress_full_lvl=compress_full_lvl
+            compress_full_lvl=compress_full_lvl,
+            only_msn=only_msn,
+            only_format=only_format
         )
 
     # Delete input file
@@ -829,6 +833,8 @@ def parsed_lcmsms_to_hdf(
         num_prec_peaks=None,
         compress_peaks_lvl=3,
         compress_full_lvl=3,
+        only_msn=False,
+        only_format=None
     ):
     # Create a new .hdf5 file to store the data
     with h5py.File(output_path, 'w') as hdf_file:
@@ -844,6 +850,8 @@ def parsed_lcmsms_to_hdf(
             # Fill NaN values with -1
             pd.set_option('future.no_silent_downcasting', True)  # TODO: is there a better solution?
             df_msn_data = df_msn_data.fillna(-1)
+            if 'dformat' in df_msn_data and only_format:
+                df_msn_data = df_msn_data[df_msn_data['dformat'] == only_format]
 
             # Find maximum number of peaks in peak list
             peaks_n = df_msn_data['peak list'].apply(lambda pl: pl.shape[1])
@@ -921,24 +929,25 @@ def parsed_lcmsms_to_hdf(
                 prec_peak_lists = np.stack(prec_peak_lists)
 
                 # Create datasets
-                prec_group = hdf_file.create_group('precursor data')
-                prec_group.create_dataset('mzs', data=prec_peak_lists[:, 0, :], dtype='f8', compression='gzip',
-                                          compression_opts=compress_peaks_lvl)
-                prec_group.create_dataset('intensities', data=prec_peak_lists[:, 1, :], dtype='f4', compression='gzip',
-                                          compression_opts=compress_peaks_lvl)
-                prec_group.create_dataset('RT', data=df_prec_data['RT'], dtype='f4',
-                                          compression=compress_full_lvl)
-                prec_group.create_dataset('ion injection time', data=df_prec_data['ion injection time'],
-                                          dtype='f4', compression=compress_full_lvl)
-                prec_group.create_dataset('scan id', data=df_prec_data['scan id'], dtype='i4',
-                                          compression=compress_full_lvl)
-                prec_group.create_dataset('type', data=df_msn_data['type'], dtype='i1',
-                                          compression=compress_full_lvl)
-                prec_group.create_dataset('def str', data=df_msn_data['def str'],
-                                          dtype=h5py.string_dtype('utf-8', None), compression=compress_full_lvl)
+                if not only_msn:
+                    prec_group = hdf_file.create_group('precursor data')
+                    prec_group.create_dataset('mzs', data=prec_peak_lists[:, 0, :], dtype='f8', compression='gzip',
+                                            compression_opts=compress_peaks_lvl)
+                    prec_group.create_dataset('intensities', data=prec_peak_lists[:, 1, :], dtype='f4', compression='gzip',
+                                            compression_opts=compress_peaks_lvl)
+                    prec_group.create_dataset('RT', data=df_prec_data['RT'], dtype='f4',
+                                            compression=compress_full_lvl)
+                    prec_group.create_dataset('ion injection time', data=df_prec_data['ion injection time'],
+                                            dtype='f4', compression=compress_full_lvl)
+                    prec_group.create_dataset('scan id', data=df_prec_data['scan id'], dtype='i4',
+                                            compression=compress_full_lvl)
+                    prec_group.create_dataset('type', data=df_msn_data['type'], dtype='i1',
+                                            compression=compress_full_lvl)
+                    prec_group.create_dataset('def str', data=df_msn_data['def str'],
+                                            dtype=h5py.string_dtype('utf-8', None), compression=compress_full_lvl)
 
 
-def downloadpublicdata_to_hdf5s(downloads_log: Path, del_in=True, verbose=False) -> None:
+def downloadpublicdata_to_hdf5s(downloads_log: Path, del_in=True, verbose=False, only_msn=False, only_format=None) -> None:
     """
     Convert downloaded LC-MS/MS data (e.g., .mzML or .mzXML) to .hdf5 format.
 
@@ -957,7 +966,7 @@ def downloadpublicdata_to_hdf5s(downloads_log: Path, del_in=True, verbose=False)
             if verbose:
                 print(f"{row['usi']} was successfully downloaded.")
             out_pth = prepend_to_stem(in_pth, row['usi'].split(':')[1]).with_suffix('.hdf5')
-            lcmsms_to_hdf5(input_path=in_pth, output_path=out_pth, verbose=verbose, del_in=del_in)
+            lcmsms_to_hdf5(input_path=in_pth, output_path=out_pth, verbose=verbose, del_in=del_in, only_msn=only_msn, only_format=only_format)
         else:
             if verbose:
                 print(f"Skipping {row['usi']} because it was not downloaded.")
