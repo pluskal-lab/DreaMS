@@ -775,7 +775,6 @@ def read_lcmsms(
 
                     if prev_spectra[ms_level - 1]['id'] is None:
                         prec_peaks = prec_spectrum.get_peaks()
-                        logger.info(prec_peaks)
                         prec_pl = su.process_peak_list(np.array([prec_peaks[0], prec_peaks[1]]), sort_mzs=True)
                         prec_problems_list = su.is_valid_peak_list(prec_pl, return_problems_list=True,
                                                                    relative_intensities=False)
@@ -967,6 +966,30 @@ def parsed_lcmsms_to_hdf(
                                             compression=compress_full_lvl)
                     prec_group.create_dataset('def str', data=df_msn_data['def str'],
                                             dtype=h5py.string_dtype('utf-8', None), compression=compress_full_lvl)
+                    
+                    n_spectra = msn_group['mzs'].shape[0]
+
+                    prec_intensities = []
+                    targ_intensities = []
+                    
+                    all_prec_id = msn_group['precursor id'][:]
+                    for i in range(n_spectra):
+                        prec_id = all_prec_id[i]
+
+                        index = np.argmin(np.abs(prec_group['mzs'][prec_id] - msn_group['precursor_mz'][i]))
+                        t_index = np.argmin(np.abs(prec_group['mzs'][prec_id] - msn_group['precursor_target_mz'][i]))
+                        prec_intensities.append(prec_group['intensities'][prec_id][index])
+                        targ_intensities.append(prec_group['intensities'][prec_id][t_index])
+
+                    prec_intensities = np.array(prec_intensities)
+                    targ_intensities = np.array(targ_intensities)
+
+                    msn_group.create_dataset('precursor intensity', data=prec_intensities, dtype='f4',
+                                         compression=compress_full_lvl)
+                    msn_group.create_dataset('precursor target intensity', data=targ_intensities, dtype='f4',
+                                         compression=compress_full_lvl)
+
+
 
 
 def downloadpublicdata_to_hdf5s(downloads_log: Path, del_in=True, verbose=False, only_msn=False, only_format=None) -> None:
