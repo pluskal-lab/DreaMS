@@ -489,15 +489,30 @@ def read_mzml(pth: Union[Path, str], verbose: bool = False, scan_range: Optional
             continue
         prec = prec[0]
 
+        if prec.metaValueExists("isolation window target m/z"):
+            prec_target_mz = prec.getMetaValue("isolation window target m/z")
+        else:
+            prec_target_mz  = prec.getMZ()
+    
+        
+        polarity = spec.getInstrumentSettings().getPolarity()
+
+        window_lo = prec.getIsolationWindowLowerOffset()
+        window_uo = prec.getIsolationWindowUpperOffset()
+
         df.append({
             FILE_NAME: pth.name,
             SCAN_NUMBER: scan_i,
             SPECTRUM: peak_list,
             PRECURSOR_MZ: prec.getMZ(),
+            'precursor_target_mz': prec_target_mz,
+            'window_lo': window_lo,
+            'window_uo': window_uo,
             RT: spec.getRT(),
             CHARGE: prec.getCharge(),
+            'polarity': polarity
         })
-    
+
     if scan_range and verbose:
         print(f'Read {len(df)} valid MS2 spectra with scan numbers in the range {scan_range}.'
               f' Max scan number in the file: {scan_i}.')
@@ -572,7 +587,7 @@ def lcmsms_to_hdf5(
     if df_msn_data is not None:
         if not output_path:
             output_path = os.path.splitext(input_path)[0] + '.hdf5'
-
+            
         parsed_lcmsms_to_hdf(
             output_path=output_path,
             file_props=file_props,
@@ -738,6 +753,10 @@ def read_lcmsms(
 
                 # > Charge
                 spectrum_data['charge'] = precursors[0].getCharge()
+                if precursors[0].metaValueExists("isolation window target m/z"):
+                    spectrum_data['precursor target m/z'] = precursors[0].getMetaValue("isolation window target m/z")
+                else:
+                    spectrum_data['precursor target m/z'] = precursors[0].getMZ()
 
                 # > Precursor m/z
                 spectrum_data['precursor mz'] = precursors[0].getMZ()
@@ -756,6 +775,7 @@ def read_lcmsms(
 
                     if prev_spectra[ms_level - 1]['id'] is None:
                         prec_peaks = prec_spectrum.get_peaks()
+                        logger.info(prec_peaks)
                         prec_pl = su.process_peak_list(np.array([prec_peaks[0], prec_peaks[1]]), sort_mzs=True)
                         prec_problems_list = su.is_valid_peak_list(prec_pl, return_problems_list=True,
                                                                    relative_intensities=False)
@@ -884,6 +904,8 @@ def parsed_lcmsms_to_hdf(
             msn_group.create_dataset(CHARGE, data=df_msn_data['charge'], dtype='i1',
                                      compression=compress_full_lvl)
             msn_group.create_dataset('positive polarity', data=df_msn_data['positive polarity'], dtype='i1',
+                                     compression=compress_full_lvl)
+            msn_group.create_dataset('precursor_target_mz', data=df_msn_data['precursor target m/z'], dtype='f4',
                                      compression=compress_full_lvl)
             msn_group.create_dataset(PRECURSOR_MZ, data=df_msn_data['precursor mz'], dtype='f4',
                                      compression=compress_full_lvl)
