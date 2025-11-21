@@ -1046,15 +1046,15 @@ def merge_lcmsms_hdf5s(
                     f_in['MSn data'].create_dataset('dformat', data=dformat_array)
 
                 # Subset spectra accordign to the dformat
-                idx = np.where(f_in['MSn data']['dformat'][:].astype(str) == dformat)[0]
-                n_spectra = idx.shape[0]
+                # idx = np.where(f_in['MSn data']['dformat'][:].astype(str) == dformat)[0]
+                # n_spectra = idx.shape[0]
 
                 # Check that the input file has enough spectra after subsetting
-                if idx.shape[0] < dformat_filters.min_file_spectra:
-                    continue
+                # if idx.shape[0] < dformat_filters.min_file_spectra:
+                #     continue
 
                 # Trim or pad spectra to the maximum number of peaks
-                spectra = np.stack([f_in['MSn data']['mzs'][:][idx], f_in['MSn data']['intensities'][:][idx]], axis=1)
+                spectra = np.stack([f_in['MSn data']['mzs'][:], f_in['MSn data']['intensities'][:]], axis=1)
                 if spectra.shape[2] > dformat_filters.max_peaks_n:
                     spectra = su.trim_peak_list(spectra, dformat_filters.max_peaks_n)
                 elif spectra.shape[2] < dformat_filters.max_peaks_n:
@@ -1065,8 +1065,10 @@ def merge_lcmsms_hdf5s(
                     (SPECTRUM, spectra, f_in['MSn data']['mzs'].dtype),
                     (FILE_NAME, [in_pth.stem] * n_spectra, h5py.string_dtype())
                 ]
+                exclude = {'mzs', 'intensities', 'ion injection time', 'precursor id', 'def str'}
+                all_keys = [k for k in f_in['MSn data'].keys() if k not in exclude]
                 datasets.extend(
-                    [(n, f_in['MSn data'][n][:][idx], f_in['MSn data'][n].dtype) for n in [CHARGE, PRECURSOR_MZ, RT]]
+                    [(n, f_in['MSn data'][n][:], f_in['MSn data'][n].dtype) for n in all_keys]
                 )
                 if store_acc_est:
                     datasets.append(
