@@ -1022,19 +1022,23 @@ def merge_lcmsms_hdf5s(
         out_pth: Path,
         dformat: str = 'A',
         store_acc_est: bool = True,
-        verbose: bool = True
+        verbose: bool = True,
+        compression: Optional[str] = 'gzip',
+        compression_level: int = 6
     ):
     """
     Merge .hdf5 files generated with `lcmsms_to_hdf5`.
 
     Args:
-    in_pths (Union[Path, Iterable[Path]]): Path to the directory with .hdf5 files or an iterable of .hdf5 files.
-    out_pth (Path): Path to the output .hdf5 file.
-    store_acc_est (bool, optional): Whether to store the instrument accuracy estimate in the output file. Defaults to True.
-    verbose (bool, optional): Whether to print additional information during the merging. Defaults to True.
+        in_pths: Directory or iterable of .hdf5 files.
+        out_pth: Output .hdf5 file.
+        store_acc_est: Whether to store instrument accuracy estimate.
+        verbose: Verbose output.
+        compression: Compression method for HDF5 datasets (e.g. 'gzip', None).
+        compression_level: Compression level (0–9) when using gzip.
     """
 
-    os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'  # Needed to avoid huge file closing bug from h5py
+    os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
 
     if not isinstance(in_pths, Path):
         in_pths = Path(in_pths)
@@ -1050,40 +1054,29 @@ def merge_lcmsms_hdf5s(
         try:
             with h5py.File(in_pth, 'a') as f_in:
 
-                # Check that the input file has a correct order of spectra and enough number of spectra
                 n_spectra = f_in['MSn data']['mzs'].shape[0]
                 if not f_in.attrs['Ordered RT']:
                     continue
                 if n_spectra < dformat_filters.min_file_spectra:
                     continue
 
-                # Compute dformats for MS/MS spectra if needed
                 if 'dformat' not in f_in['MSn data']:
-                    # TODO: in dformat calculation report invoked filters for further logging
-                    # Calculate dformat if not present
                     dformat_array = np.empty(n_spectra, dtype=h5py.string_dtype())
-                    specs = np.stack([f_in['MSn data']['mzs'][:], f_in['MSn data']['intensities'][:]], axis=1)
+                    specs = np.stack([f_in['MSn data']['mzs'][:],
+                                      f_in['MSn data']['intensities'][:]], axis=1)
                     prec_mzs = f_in['MSn data']['precursor mz'][:]
                     for i in range(n_spectra):
                         dformat_array[i] = dformats.assign_dformat(specs[i], prec_mz=prec_mzs[i])
                     f_in['MSn data'].create_dataset('dformat', data=dformat_array)
 
-                # Subset spectra accordign to the dformat
-                # idx = np.where(f_in['MSn data']['dformat'][:].astype(str) == dformat)[0]
-                # n_spectra = idx.shape[0]
+                spectra = np.stack([f_in['MSn data']['mzs'][:],
+                                    f_in['MSn data']['intensities'][:]], axis=1)
 
-                # Check that the input file has enough spectra after subsetting
-                # if idx.shape[0] < dformat_filters.min_file_spectra:
-                #     continue
-
-                # Trim or pad spectra to the maximum number of peaks
-                spectra = np.stack([f_in['MSn data']['mzs'][:], f_in['MSn data']['intensities'][:]], axis=1)
                 if spectra.shape[2] > dformat_filters.max_peaks_n:
                     spectra = su.trim_peak_list(spectra, dformat_filters.max_peaks_n)
                 elif spectra.shape[2] < dformat_filters.max_peaks_n:
                     spectra = su.pad_peak_list(spectra, dformat_filters.max_peaks_n)
 
-                # Define datasets to store
                 datasets = [
                     (SPECTRUM, spectra, f_in['MSn data']['mzs'].dtype),
                     (FILE_NAME, [in_pth.stem] * n_spectra, h5py.string_dtype())
@@ -1095,25 +1088,35 @@ def merge_lcmsms_hdf5s(
                 )
                 if store_acc_est:
                     datasets.append(
-                        ('instrument accuracy est.', np.repeat(f_in.attrs['TBXICs median stdev'], n_spectra), np.float32)
+                        ('instrument accuracy est.',
+                         np.repeat(f_in.attrs['TBXICs median stdev'], n_spectra),
+                         np.float32)
                     )
 
-                # Store datasets in the output file
                 for name, data, dtype in datasets:
+                    create_kwargs = dict(
+                        dtype=dtype,
+                        compression=compression,
+                        compression_opts=compression_level
+                        if compression == 'gzip' else None
+                    )
+
                     if first_file:
                         f_out.create_dataset(
-                            name, data=data, shape=data.shape if isinstance(data, np.ndarray) else (len(data),),
+                            name,
+                            data=data,
+                            shape=data.shape if isinstance(data, np.ndarray) else (len(data),),
                             maxshape=(None, *data.shape[1:]) if isinstance(data, np.ndarray) else (None,),
-                            dtype=dtype
+                            **create_kwargs
                         )
                     else:
                         data_len = data.shape[0] if isinstance(data, np.ndarray) else len(data)
                         f_out[name].resize(f_out[name].shape[0] + data_len, axis=0)
                         f_out[name][-data_len:] = data
-                first_file = False
-        except:
-            print(f'Skipping {f_in}.')
 
+                first_file = False
+        except Exception as e:
+            print(f'Skipping {in_pth} because of error: {e}')
 
 
 def lsh_subset(in_pth, dformat, n_hplanes=None, bin_size=1, max_specs_per_lsh=None, seed=333):
