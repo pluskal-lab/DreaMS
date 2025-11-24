@@ -489,15 +489,30 @@ def read_mzml(pth: Union[Path, str], verbose: bool = False, scan_range: Optional
             continue
         prec = prec[0]
 
+        if prec.metaValueExists("isolation window target m/z"):
+            prec_target_mz = prec.getMetaValue("isolation window target m/z")
+        else:
+            prec_target_mz  = prec.getMZ()
+    
+        
+        polarity = spec.getInstrumentSettings().getPolarity()
+
+        window_lo = prec.getIsolationWindowLowerOffset()
+        window_uo = prec.getIsolationWindowUpperOffset()
+
         df.append({
             FILE_NAME: pth.name,
             SCAN_NUMBER: scan_i,
             SPECTRUM: peak_list,
             PRECURSOR_MZ: prec.getMZ(),
+            'precursor_target_mz': prec_target_mz,
+            'window_lo': window_lo,
+            'window_uo': window_uo,
             RT: spec.getRT(),
             CHARGE: prec.getCharge(),
+            'polarity': polarity
         })
-    
+
     if scan_range and verbose:
         print(f'Read {len(df)} valid MS2 spectra with scan numbers in the range {scan_range}.'
               f' Max scan number in the file: {scan_i}.')
@@ -572,7 +587,7 @@ def lcmsms_to_hdf5(
     if df_msn_data is not None:
         if not output_path:
             output_path = os.path.splitext(input_path)[0] + '.hdf5'
-
+            
         parsed_lcmsms_to_hdf(
             output_path=output_path,
             file_props=file_props,
@@ -738,6 +753,10 @@ def read_lcmsms(
 
                 # > Charge
                 spectrum_data['charge'] = precursors[0].getCharge()
+                if precursors[0].metaValueExists("isolation window target m/z"):
+                    spectrum_data['precursor target m/z'] = precursors[0].getMetaValue("isolation window target m/z")
+                else:
+                    spectrum_data['precursor target m/z'] = precursors[0].getMZ()
 
                 # > Precursor m/z
                 spectrum_data['precursor mz'] = precursors[0].getMZ()
@@ -885,6 +904,8 @@ def parsed_lcmsms_to_hdf(
                                      compression=compress_full_lvl)
             msn_group.create_dataset('positive polarity', data=df_msn_data['positive polarity'], dtype='i1',
                                      compression=compress_full_lvl)
+            msn_group.create_dataset('precursor_target_mz', data=df_msn_data['precursor target m/z'], dtype='f4',
+                                     compression=compress_full_lvl)
             msn_group.create_dataset(PRECURSOR_MZ, data=df_msn_data['precursor mz'], dtype='f4',
                                      compression=compress_full_lvl)
             msn_group.create_dataset('window lo', data=df_msn_data['window lo'], dtype='f4',
@@ -945,6 +966,30 @@ def parsed_lcmsms_to_hdf(
                                             compression=compress_full_lvl)
                     prec_group.create_dataset('def str', data=df_msn_data['def str'],
                                             dtype=h5py.string_dtype('utf-8', None), compression=compress_full_lvl)
+                    
+                    n_spectra = msn_group['mzs'].shape[0]
+
+                    prec_intensities = []
+                    targ_intensities = []
+                    
+                    all_prec_id = msn_group['precursor id'][:]
+                    for i in range(n_spectra):
+                        prec_id = all_prec_id[i]
+
+                        index = np.argmin(np.abs(prec_group['mzs'][prec_id] - msn_group['precursor_mz'][i]))
+                        t_index = np.argmin(np.abs(prec_group['mzs'][prec_id] - msn_group['precursor_target_mz'][i]))
+                        prec_intensities.append(prec_group['intensities'][prec_id][index])
+                        targ_intensities.append(prec_group['intensities'][prec_id][t_index])
+
+                    prec_intensities = np.array(prec_intensities)
+                    targ_intensities = np.array(targ_intensities)
+
+                    msn_group.create_dataset('precursor intensity', data=prec_intensities, dtype='f4',
+                                         compression=compress_full_lvl)
+                    msn_group.create_dataset('precursor target intensity', data=targ_intensities, dtype='f4',
+                                         compression=compress_full_lvl)
+
+
 
 
 def downloadpublicdata_to_hdf5s(downloads_log: Path, del_in=True, verbose=False, only_msn=False, only_format=None) -> None:
@@ -1024,15 +1069,15 @@ def merge_lcmsms_hdf5s(
                     f_in['MSn data'].create_dataset('dformat', data=dformat_array)
 
                 # Subset spectra accordign to the dformat
-                idx = np.where(f_in['MSn data']['dformat'][:].astype(str) == dformat)[0]
-                n_spectra = idx.shape[0]
+                # idx = np.where(f_in['MSn data']['dformat'][:].astype(str) == dformat)[0]
+                # n_spectra = idx.shape[0]
 
                 # Check that the input file has enough spectra after subsetting
-                if idx.shape[0] < dformat_filters.min_file_spectra:
-                    continue
+                # if idx.shape[0] < dformat_filters.min_file_spectra:
+                #     continue
 
                 # Trim or pad spectra to the maximum number of peaks
-                spectra = np.stack([f_in['MSn data']['mzs'][:][idx], f_in['MSn data']['intensities'][:][idx]], axis=1)
+                spectra = np.stack([f_in['MSn data']['mzs'][:], f_in['MSn data']['intensities'][:]], axis=1)
                 if spectra.shape[2] > dformat_filters.max_peaks_n:
                     spectra = su.trim_peak_list(spectra, dformat_filters.max_peaks_n)
                 elif spectra.shape[2] < dformat_filters.max_peaks_n:
@@ -1043,8 +1088,10 @@ def merge_lcmsms_hdf5s(
                     (SPECTRUM, spectra, f_in['MSn data']['mzs'].dtype),
                     (FILE_NAME, [in_pth.stem] * n_spectra, h5py.string_dtype())
                 ]
+                exclude = {'mzs', 'intensities', 'ion injection time', 'precursor id', 'def str'}
+                all_keys = [k for k in f_in['MSn data'].keys() if k not in exclude]
                 datasets.extend(
-                    [(n, f_in['MSn data'][n][:][idx], f_in['MSn data'][n].dtype) for n in [CHARGE, PRECURSOR_MZ, RT]]
+                    [(n, f_in['MSn data'][n][:], f_in['MSn data'][n].dtype) for n in all_keys]
                 )
                 if store_acc_est:
                     datasets.append(
