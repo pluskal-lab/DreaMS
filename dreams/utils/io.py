@@ -635,6 +635,7 @@ def read_lcmsms(
         #write_to_hdf(args, file_props=None, df_msn_data=None, prec_spectra_data=None, logger=logger)
         return None, None, None
 
+    lcms.remove_electromagnetic_spectra(msdata)
     file_props['Ordered RT'] = lcms.sorted_by_rt(msdata)
     if not file_props['Ordered RT']:
         lcms.sort_by_rt(msdata)
