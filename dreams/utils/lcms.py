@@ -287,6 +287,10 @@ def sorted_by_rt(msdata):
 def sort_by_rt(msdata):
     return msdata.setSpectra(sorted(msdata.getSpectra(), key=lambda s: s.getRT(), reverse=True))
 
+def remove_electromagnetic_spectra(msdata):
+    filtered_spectra = [spectrum for spectrum in msdata if not spectrum.getMetaValue('lowest observed wavelength')]
+    msdata.setSpectra(filtered_spectra)
+    return msdata
 
 def get_instrument_props(msdata):
 
