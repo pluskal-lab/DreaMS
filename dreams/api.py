@@ -1,6 +1,10 @@
+import warnings
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message="pkg_resources is deprecated as an API"
+)
 import sys
-import os
-import h5py
 import platform
 import torch
 import pandas as pd
