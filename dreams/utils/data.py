@@ -219,8 +219,11 @@ class MSData:
             self.use_col_as_index(index_col)
 
     def __del__(self):
-        if hasattr(self, 'f') and isinstance(self.f, h5py.File):
-            self.f.close()
+        try:
+            if hasattr(self, 'f') and self.f is not None and isinstance(self.f, h5py.File):
+                self.f.close()
+        except Exception as e:
+            return
 
     def columns(self):
         return list(self.data.keys())
