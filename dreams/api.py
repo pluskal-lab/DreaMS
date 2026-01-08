@@ -1,4 +1,5 @@
 import sys
+import os
 import h5py
 import platform
 import torch
@@ -18,6 +19,11 @@ import dreams.utils.misc as utils
 from dreams.models.dreams.dreams import DreaMS as DreaMSModel
 from dreams.models.heads.heads import *
 from dreams.definitions import *
+
+try:
+    import faiss
+except ImportError:
+    faiss = None
 
 
 if platform.system() == 'Windows':
@@ -636,3 +642,88 @@ class DreaMSAtlas:
     
     def __len__(self):
         return self.lib.num_spectra + self.gems.num_spectra
+
+
+class DreaMSSearch:
+    def __init__(
+        self,
+        ref_spectra: T.Union[Path, str, du.MSData],
+        verbose: bool = True
+    ):
+        if faiss is None:
+            raise ImportError('Faiss is not installed. Please install it using `pip install faiss==1.9.0`.')
+
+        self.verbose = verbose
+
+        # Fixes weird script hanging on macOS caused by the index.search method
+        if sys.platform.lower().startswith('darwin'):
+            faiss.omp_set_num_threads(1)
+
+        # Compute embeddings for reference spectra
+        if not isinstance(ref_spectra, du.MSData):
+            ref_spectra = du.MSData.load(ref_spectra, in_mem=True)
+        self.ref_spectra = ref_spectra
+        self.embs_ref = dreams_embeddings(self.ref_spectra).astype('float32', copy=False)
+        self.embs_ref = np.ascontiguousarray(self.embs_ref)
+
+        # Build search index
+        if self.verbose:
+            print(f'Building search index for {len(self.ref_spectra):,} reference spectra...')
+        faiss.normalize_L2(self.embs_ref)
+        self.index = faiss.IndexFlatIP(1024)
+        self.index.add(self.embs_ref)
+
+    def query(
+        self,
+        query_spectra: T.Union[Path, str, du.MSData],
+        out_path: T.Optional[Path] = None,
+        k: int = 10,
+        dreams_sim_thld: float = -np.inf
+    ):
+        if k > len(self.ref_spectra):
+            raise ValueError(f'Requested more neighbors ({k})) than available in the reference spectral library '
+                             f'({len(self.ref_spectra):,} spectra).')
+
+        # Compute embeddings for query spectra
+        if not isinstance(query_spectra, du.MSData):
+            query_spectra = du.MSData.load(query_spectra, in_mem=True)
+        embs = dreams_embeddings(query_spectra).astype('float32', copy=False)
+        embs = np.ascontiguousarray(embs)
+        faiss.normalize_L2(embs)
+
+        # Search for top-k neighbors
+        if self.verbose:
+            print(f'Searching for top-{k} neighbors for {len(embs):,} query spectra...')
+        similarities, idx = self.index.search(embs, k=k)
+
+        # Build DataFrame with results
+        df = []
+        for i in range(len(embs)):
+            for k, j in enumerate(idx[i]):
+                if similarities[i][k] > dreams_sim_thld:
+                    row = {}
+                    for col in [SCAN_NUMBER, RT]:
+                        # TODO: tmp renaming fix, update once feature id vs scan number logic is refactred
+                        col_name = 'feature_id' if col == SCAN_NUMBER else col
+                        if col in query_spectra.columns():
+                            row[f'query_{col_name}'] = query_spectra.get_values(col, i)
+                        if col in self.ref_spectra.columns():
+                            row[f'ref_{col_name}'] = self.ref_spectra.get_values(col, j)
+                    row.update({
+                        'topk' : k + 1,
+                        'DreaMS_similarity' : similarities[i][k],
+                        'query_precursor_mz' : query_spectra.get_prec_mzs(i),
+                        'ref_precursor_mz' : self.ref_spectra.get_prec_mzs(j),
+                        'query_index' : i,
+                        'ref_index' : j,
+                    })
+                    df.append(row)
+        df = pd.DataFrame(df)
+        df = df.sort_values('DreaMS_similarity', ascending=False)
+
+        # Save results to file
+        if out_path is not None:
+            df.to_csv(out_path, index=False)
+            if self.verbose:
+                print(f'Saved results to {out_path}')
+        return df

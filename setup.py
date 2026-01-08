@@ -15,7 +15,7 @@ setup(
     license="MIT",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/pluskal-lab/MassSpecGym",
+    url="https://github.com/pluskal-lab/DreaMS",
     install_requires=[
         "numpy==1.25.0",
         "numba==0.58.0",
@@ -51,6 +51,9 @@ setup(
         "notebooks": [
             "jupyter==1.0.0",
             "ipywidgets==8.1.3",
+        ],
+        "search": [
+            "faiss-cpu==1.9.0",
         ],
     },
     classifiers=[
