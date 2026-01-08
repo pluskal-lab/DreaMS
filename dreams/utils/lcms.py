@@ -2,7 +2,10 @@ import pandas as pd
 from enum import Enum, auto, unique
 import statistics as stats
 import numpy as np
-import pyopenms as pyms
+import contextlib
+import io as std_io
+with contextlib.redirect_stderr(std_io.StringIO()):
+    import pyopenms as pyms
 from collections import Counter
 import dreams.utils.spectra as su
 import dreams.utils.misc as utils

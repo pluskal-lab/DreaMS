@@ -10,14 +10,14 @@ import numpy as np
 import pandas as pd
 import rdkit.Chem as Chem
 import pyteomics
-import pyopenms as oms
 import matplotlib.pyplot as plt
 import urllib.parse as urlparse
 import contextlib
 import time
 import io as std_io
 import wandb
-import pyopenms as pyms
+with contextlib.redirect_stderr(std_io.StringIO()):
+    import pyopenms as pyms
 import traceback
 from collections import Counter
 from functools import cache
@@ -445,11 +445,11 @@ def read_mgf(pth, **kwargs):
 def read_mzml(pth: Union[Path, str], verbose: bool = False, scan_range: Optional[Tuple[int, int]] = None):
     if isinstance(pth, str):
         pth = Path(pth)
-    exp = oms.MSExperiment()
+    exp = pyms.MSExperiment()
     if pth.suffix.lower() == '.mzml':
-        oms.MzMLFile().load(str(pth), exp)
+        pyms.MzMLFile().load(str(pth), exp)
     elif pth.suffix.lower() == '.mzxml':
-        oms.MzXMLFile().load(str(pth), exp)
+        pyms.MzXMLFile().load(str(pth), exp)
     else:
         raise ValueError(f'Unsupported file extension: {pth.suffix}.')
 
