@@ -9,7 +9,15 @@ from dreams.utils.data import subset_lsh
 
 def serialize(x):
     if isinstance(x, pd.DataFrame):
-        return x.head().to_string(index=False)
+        # Show a nicely-truncated DataFrame preview in the terminal
+        with pd.option_context(
+            'display.max_rows', 5,
+            'display.max_columns', 10,
+            'display.width', 120,
+            'display.max_colwidth', 30,
+            'display.expand_frame_repr', False
+        ):
+            return x.__repr__()
     return x
 
 

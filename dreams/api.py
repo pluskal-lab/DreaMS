@@ -682,7 +682,8 @@ class DreaMSSearch:
         query_spectra: T.Union[Path, str, du.MSData],
         out_path: T.Optional[Path] = None,
         k: int = 10,
-        dreams_sim_thld: float = -np.inf
+        dreams_sim_thld: float = -np.inf,
+        out_all_metadata: bool = True
     ):
         if k > len(self.ref_spectra):
             raise ValueError(f'Requested more neighbors ({k})) than available in the reference spectral library '
@@ -706,24 +707,37 @@ class DreaMSSearch:
             for k, j in enumerate(idx[i]):
                 if similarities[i][k] > dreams_sim_thld:
                     row = {}
-                    for col in [SCAN_NUMBER, RT]:
-                        # TODO: tmp renaming fix, update once feature id vs scan number logic is refactred
-                        col_name = 'feature_id' if col == SCAN_NUMBER else col
+
+                    # Add main metadata columns for query and reference spectra
+                    main_cols = [SCAN_NUMBER, RT, PRECURSOR_MZ]
+                    for col in main_cols:
                         if col in query_spectra.columns():
-                            row[f'query_{col_name}'] = query_spectra.get_values(col, i)
+                            row[f'query_{col}'] = query_spectra.get_values(col, i)
                         if col in self.ref_spectra.columns():
-                            row[f'ref_{col_name}'] = self.ref_spectra.get_values(col, j)
+                            row[f'ref_{col}'] = self.ref_spectra.get_values(col, j)
+                    
+                    # Add all metadata columns for query and reference spectra
+                    if out_all_metadata:
+                        for col in query_spectra.columns():
+                            if col not in main_cols + [SPECTRUM]:
+                                row[f'query_{col}'] = query_spectra.get_values(col, i)
+                        for col in self.ref_spectra.columns():
+                            if col not in main_cols + [SPECTRUM]:
+                                row[f'ref_{col}'] = self.ref_spectra.get_values(col, j)
+
+                    # Add DreaMS similarity, top-k index, and query/reference index
                     row.update({
-                        'topk' : k + 1,
-                        'DreaMS_similarity' : similarities[i][k],
-                        'query_precursor_mz' : query_spectra.get_prec_mzs(i),
-                        'ref_precursor_mz' : self.ref_spectra.get_prec_mzs(j),
                         'query_index' : i,
                         'ref_index' : j,
+                        'topk' : k + 1,
+                        'DreaMS_similarity' : similarities[i][k],
                     })
                     df.append(row)
         df = pd.DataFrame(df)
         df = df.sort_values('DreaMS_similarity', ascending=False)
+
+        # TODO: tmp renaming fix, update once feature id vs scan number logic is refactred
+        df = df.rename(columns={f'query_{SCAN_NUMBER}' : 'query_feature_id', f'ref_{SCAN_NUMBER}' : 'ref_feature_id'})
 
         # Save results to file
         if out_path is not None:
