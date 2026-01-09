@@ -667,15 +667,19 @@ class DreaMSSearch:
         if not isinstance(ref_spectra, du.MSData):
             ref_spectra = du.MSData.load(ref_spectra, in_mem=True)
         self.ref_spectra = ref_spectra
-        self.embs_ref = dreams_embeddings(self.ref_spectra).astype('float32', copy=False)
-        self.embs_ref = np.ascontiguousarray(self.embs_ref)
+        print(self.ref_spectra.columns())
+        if DREAMS_EMBEDDING in self.ref_spectra.columns():
+            embs_ref = self.ref_spectra[DREAMS_EMBEDDING]
+        else:
+            embs_ref = dreams_embeddings(self.ref_spectra)
+        embs_ref = embs_ref.astype('float32', copy=False)
 
         # Build search index
         if self.verbose:
             print(f'Building search index for {len(self.ref_spectra):,} reference spectra...')
-        faiss.normalize_L2(self.embs_ref)
+        faiss.normalize_L2(embs_ref)
         self.index = faiss.IndexFlatIP(1024)
-        self.index.add(self.embs_ref)
+        self.index.add(embs_ref)
 
     def query(
         self,
@@ -692,8 +696,11 @@ class DreaMSSearch:
         # Compute embeddings for query spectra
         if not isinstance(query_spectra, du.MSData):
             query_spectra = du.MSData.load(query_spectra, in_mem=True)
-        embs = dreams_embeddings(query_spectra).astype('float32', copy=False)
-        embs = np.ascontiguousarray(embs)
+        if DREAMS_EMBEDDING in query_spectra.columns():
+            embs = query_spectra[DREAMS_EMBEDDING]
+        else:
+            embs = dreams_embeddings(query_spectra)
+        embs = embs.astype('float32', copy=False)
         faiss.normalize_L2(embs)
 
         # Search for top-k neighbors
