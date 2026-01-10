@@ -687,11 +687,18 @@ class DreaMSSearch:
         out_path: T.Optional[Path] = None,
         k: int = 10,
         dreams_sim_thld: float = -np.inf,
-        out_all_metadata: bool = True
+        out_all_metadata: bool = True,
+        out_spectra: bool = True
     ):
         if k > len(self.ref_spectra):
             raise ValueError(f'Requested more neighbors ({k})) than available in the reference spectral library '
                              f'({len(self.ref_spectra):,} spectra).')
+
+        if not isinstance(out_path, Path):
+            out_path = Path(out_path)
+        
+        if out_path is not None and out_path.suffix != '.tsv':
+            raise ValueError(f'Output file {out_path} must have a .tsv extension.')
 
         # Compute embeddings for query spectra
         if not isinstance(query_spectra, du.MSData):
@@ -732,6 +739,11 @@ class DreaMSSearch:
                             if col not in main_cols + [SPECTRUM]:
                                 row[f'ref_{col}'] = self.ref_spectra.get_values(col, j)
 
+                    # Add spectra columns for query and reference spectra
+                    if out_spectra:
+                        row[SPECTRUM] = query_spectra.get_spectra(i)
+                        row[f'ref_{SPECTRUM}'] = self.ref_spectra.get_spectra(j)
+
                     # Add DreaMS similarity, top-k index, and query/reference index
                     row.update({
                         'index' : i,
@@ -748,7 +760,10 @@ class DreaMSSearch:
 
         # Save results to file
         if out_path is not None:
-            df.to_csv(out_path, index=False)
+            if out_spectra:
+                df[SPECTRUM] = df[SPECTRUM].apply(lambda x: x.tolist())
+                df[f'ref_{SPECTRUM}'] = df[f'ref_{SPECTRUM}'].apply(lambda x: x.tolist())
+            df.to_csv(out_path, index=False, sep='\t')
             if self.verbose:
                 print(f'Saved results to {out_path}')
         return df
