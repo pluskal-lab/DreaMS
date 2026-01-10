@@ -744,7 +744,7 @@ class DreaMSSearch:
         df = df.sort_values('DreaMS_similarity', ascending=False)
 
         # TODO: tmp renaming fix, update once feature id vs scan number logic is refactred
-        df = df.rename(columns={f'query_{SCAN_NUMBER}' : 'query_feature_id', f'ref_{SCAN_NUMBER}' : 'ref_feature_id'})
+        # df = df.rename(columns={f'{SCAN_NUMBER}' : 'feature_id', f'ref_{SCAN_NUMBER}' : 'ref_feature_id'})
 
         # Save results to file
         if out_path is not None:
