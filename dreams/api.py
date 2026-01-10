@@ -719,7 +719,7 @@ class DreaMSSearch:
                     main_cols = [SCAN_NUMBER, RT, PRECURSOR_MZ]
                     for col in main_cols:
                         if col in query_spectra.columns():
-                            row[f'query_{col}'] = query_spectra.get_values(col, i)
+                            row[f'{col}'] = query_spectra.get_values(col, i)
                         if col in self.ref_spectra.columns():
                             row[f'ref_{col}'] = self.ref_spectra.get_values(col, j)
                     
@@ -727,14 +727,14 @@ class DreaMSSearch:
                     if out_all_metadata:
                         for col in query_spectra.columns():
                             if col not in main_cols + [SPECTRUM]:
-                                row[f'query_{col}'] = query_spectra.get_values(col, i)
+                                row[f'{col}'] = query_spectra.get_values(col, i)
                         for col in self.ref_spectra.columns():
                             if col not in main_cols + [SPECTRUM]:
                                 row[f'ref_{col}'] = self.ref_spectra.get_values(col, j)
 
                     # Add DreaMS similarity, top-k index, and query/reference index
                     row.update({
-                        'query_index' : i,
+                        'index' : i,
                         'ref_index' : j,
                         'topk' : k + 1,
                         'DreaMS_similarity' : similarities[i][k],
