@@ -694,11 +694,11 @@ class DreaMSSearch:
             raise ValueError(f'Requested more neighbors ({k})) than available in the reference spectral library '
                              f'({len(self.ref_spectra):,} spectra).')
 
-        if not isinstance(out_path, Path):
-            out_path = Path(out_path)
-        
-        if out_path is not None and out_path.suffix != '.tsv':
-            raise ValueError(f'Output file {out_path} must have a .tsv extension.')
+        if out_path is not None:
+            if not isinstance(out_path, Path):
+                out_path = Path(out_path)
+            if out_path.suffix != '.tsv':
+                raise ValueError(f'Output file {out_path} must have a .tsv extension.')
 
         # Compute embeddings for query spectra
         if not isinstance(query_spectra, du.MSData):
