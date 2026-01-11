@@ -183,6 +183,8 @@ def dreams_predictions(
     # TODO: consider model name
     if not title:
         title = 'DreaMS_prediction'
+    if title == DREAMS_EMBEDDING:
+        title = 'DreaMS embeddings'
 
     # Preallocate memory for predictions
     num_samples = len(spectra)
