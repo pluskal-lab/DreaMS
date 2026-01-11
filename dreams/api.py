@@ -752,6 +752,14 @@ class DreaMSSearch:
                         'DreaMS_similarity' : similarities[i][k],
                     })
                     df.append(row)
+        
+        # Return None if no neighbors found
+        if len(df) == 0:
+            if self.verbose:
+                print('No neighbors found for the query spectra.')
+            return None
+
+        # Create DataFrame with results
         df = pd.DataFrame(df)
         df = df.sort_values('DreaMS_similarity', ascending=False)
 
