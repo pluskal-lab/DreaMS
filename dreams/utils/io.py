@@ -330,6 +330,7 @@ def read_textual_ms_format(
         smiles_name=['SMILES'],
         rt_name=['RTINSECONDS', 'RETENTION_TIME', 'RTINMINUTES', 'RT'],
         feature_id_name=['FEATURE_ID', 'SCAN_NUMBER'],
+        name_name=['NAME'],
         ignore_line_prefixes=(),
         encoding='utf-8',
     ):
@@ -353,6 +354,9 @@ def read_textual_ms_format(
     if smiles_name:
         for smiles_name_i in smiles_name:
             attr_mapping[smiles_name_i] = SMILES
+    if name_name:
+        for name_name_i in name_name:
+            attr_mapping[name_name_i] = NAME
     if rt_name:
         for rt_name_i in rt_name:
             attr_mapping[rt_name_i] = RT
