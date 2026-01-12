@@ -669,18 +669,19 @@ class DreaMSSearch:
         if not isinstance(ref_spectra, du.MSData):
             ref_spectra = du.MSData.load(ref_spectra, in_mem=True)
         self.ref_spectra = ref_spectra
-        print(self.ref_spectra.columns())
         if DREAMS_EMBEDDING in self.ref_spectra.columns():
             embs_ref = self.ref_spectra[DREAMS_EMBEDDING]
         else:
             embs_ref = dreams_embeddings(self.ref_spectra)
         embs_ref = embs_ref.astype('float32', copy=False)
+        if embs_ref.ndim == 1:
+            embs_ref = embs_ref[np.newaxis, :]
 
         # Build search index
         if self.verbose:
             print(f'Building search index for {len(self.ref_spectra):,} reference spectra...')
         faiss.normalize_L2(embs_ref)
-        self.index = faiss.IndexFlatIP(1024)
+        self.index = faiss.IndexFlatIP(embs_ref.shape[1])
         self.index.add(embs_ref)
 
     def query(
@@ -710,6 +711,8 @@ class DreaMSSearch:
         else:
             embs = dreams_embeddings(query_spectra)
         embs = embs.astype('float32', copy=False)
+        if embs.ndim == 1:
+            embs = embs[np.newaxis, :]
         faiss.normalize_L2(embs)
 
         # Search for top-k neighbors
@@ -764,9 +767,6 @@ class DreaMSSearch:
         # Create DataFrame with results
         df = pd.DataFrame(df)
         df = df.sort_values('DreaMS_similarity', ascending=False)
-
-        # TODO: tmp renaming fix, update once feature id vs scan number logic is refactred
-        # df = df.rename(columns={f'{SCAN_NUMBER}' : 'feature_id', f'ref_{SCAN_NUMBER}' : 'ref_feature_id'})
 
         # Save results to file
         if out_path is not None:
