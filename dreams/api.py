@@ -679,7 +679,7 @@ class DreaMSSearch:
 
         # Build search index
         if self.verbose:
-            print(f'Building search index for {len(self.ref_spectra):,} reference spectra...')
+            print(f'Building search index (num spectra: {len(self.ref_spectra):,})...')
         faiss.normalize_L2(embs_ref)
         self.index = faiss.IndexFlatIP(embs_ref.shape[1])
         self.index.add(embs_ref)
@@ -695,7 +695,7 @@ class DreaMSSearch:
     ):
         if k > len(self.ref_spectra):
             raise ValueError(f'Requested more neighbors ({k})) than available in the reference spectral library '
-                             f'({len(self.ref_spectra):,} spectra).')
+                             f'(num spectra: {len(self.ref_spectra):,}).')
 
         if out_path is not None:
             if not isinstance(out_path, Path):
@@ -717,7 +717,7 @@ class DreaMSSearch:
 
         # Search for top-k neighbors
         if self.verbose:
-            print(f'Searching for top-{k} neighbors for {len(embs):,} query spectra...')
+            print(f'Searching for top-{k} neighbors...')
         similarities, idx = self.index.search(embs, k=k)
 
         # Build DataFrame with results

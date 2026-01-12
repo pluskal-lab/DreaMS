@@ -210,7 +210,7 @@ class MSData:
         self.mode = mode
 
         if in_mem:
-            print(f'Loading dataset {self.hdf5_pth.stem} into memory ({self.num_spectra} spectra)...')
+            print(f'Loading dataset {self.hdf5_pth.stem} into memory ({self.num_spectra} {"spectra" if self.num_spectra > 1 else "spectrum"})...')
             self.data = self.load_hdf5_in_mem(self.f)
         
         self.index_col = index_col
