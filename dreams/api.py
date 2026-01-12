@@ -214,7 +214,7 @@ def dreams_predictions(
             progress_bar.update(batch_size)
     progress_bar.close()
 
-    preds = preds.squeeze().numpy()
+    preds = preds.numpy()
 
     if store_preds:
         msdata.add_column(title, preds)
