@@ -18,6 +18,7 @@ from torch.utils.data.dataloader import DataLoader
 from argparse import Namespace
 import dreams.utils.data as du
 import dreams.utils.io as io
+import dreams.utils.spectra as su
 import dreams.utils.dformats as dformats
 import dreams.utils.misc as utils
 from dreams.models.dreams.dreams import DreaMS as DreaMSModel
@@ -779,8 +780,8 @@ class DreaMSSearch:
         # Save results to file
         if out_path is not None:
             if out_spectra:
-                df[SPECTRUM] = df[SPECTRUM].apply(lambda x: x.tolist())
-                df[f'ref_{SPECTRUM}'] = df[f'ref_{SPECTRUM}'].apply(lambda x: x.tolist())
+                df[SPECTRUM] = df[SPECTRUM].apply(lambda x: su.unpad_peak_list(x).tolist())
+                df[f'ref_{SPECTRUM}'] = df[f'ref_{SPECTRUM}'].apply(lambda x: su.unpad_peak_list(x).tolist())
             df.to_csv(out_path, index=False, sep='\t')
             if self.verbose:
                 print(f'Saved results to {out_path}')
