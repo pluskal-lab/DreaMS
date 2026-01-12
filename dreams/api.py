@@ -660,12 +660,14 @@ class DreaMSSearch:
     def __init__(
         self,
         ref_spectra: T.Union[Path, str, du.MSData],
-        verbose: bool = True
+        verbose: bool = True,
+        store_embs: bool = True
     ):
         if faiss is None:
             raise ImportError('Faiss is not installed. Please install it using `pip install faiss==1.9.0`.')
 
         self.verbose = verbose
+        self.store_embs = store_embs
 
         # Fixes weird script hanging on macOS caused by the index.search method
         if sys.platform.lower().startswith('darwin'):
@@ -673,12 +675,12 @@ class DreaMSSearch:
 
         # Compute embeddings for reference spectra
         if not isinstance(ref_spectra, du.MSData):
-            ref_spectra = du.MSData.load(ref_spectra, in_mem=True)
+            ref_spectra = du.MSData.load(ref_spectra, in_mem=True, mode='a' if self.store_embs else 'r')
         self.ref_spectra = ref_spectra
         if DREAMS_EMBEDDING in self.ref_spectra.columns():
             embs_ref = self.ref_spectra[DREAMS_EMBEDDING]
         else:
-            embs_ref = dreams_embeddings(self.ref_spectra)
+            embs_ref = dreams_embeddings(self.ref_spectra, store_embs=self.store_embs)
         embs_ref = embs_ref.astype('float32', copy=False)
         if embs_ref.ndim == 1:
             embs_ref = embs_ref[np.newaxis, :]
@@ -711,11 +713,11 @@ class DreaMSSearch:
 
         # Compute embeddings for query spectra
         if not isinstance(query_spectra, du.MSData):
-            query_spectra = du.MSData.load(query_spectra, in_mem=True)
+            query_spectra = du.MSData.load(query_spectra, in_mem=True, mode='a' if self.store_embs else 'r')
         if DREAMS_EMBEDDING in query_spectra.columns():
             embs = query_spectra[DREAMS_EMBEDDING]
         else:
-            embs = dreams_embeddings(query_spectra)
+            embs = dreams_embeddings(query_spectra, store_embs=self.store_embs)
         embs = embs.astype('float32', copy=False)
         if embs.ndim == 1:
             embs = embs[np.newaxis, :]
