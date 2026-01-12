@@ -141,6 +141,7 @@ def dreams_predictions(
         n_highest_peaks=None,
         title='',
         logger_pth=None,
+        store_preds=False,
         **msdata_kwargs
     ):
 
@@ -165,9 +166,12 @@ def dreams_predictions(
     if not isinstance(spectra, du.MSData):
         if isinstance(spectra, str):
             spectra = Path(spectra)
-        msdata = du.MSData.load(spectra, **msdata_kwargs)
+        msdata = du.MSData.load(spectra, mode='a' if store_preds else 'r', **msdata_kwargs)
     else:
         msdata = spectra
+        if msdata.mode != 'a' and store_preds:
+            raise ValueError('Adding new columns is allowed only in append mode. Initialize msdata as '
+                             '`MSData(..., mode="a")` to add new columns.')
     spectra = msdata.to_torch_dataset(spec_preproc)
     dataloader = DataLoader(spectra, batch_size=batch_size, shuffle=False, drop_last=False)
 
@@ -183,8 +187,6 @@ def dreams_predictions(
     # TODO: consider model name
     if not title:
         title = 'DreaMS_prediction'
-    if title == DREAMS_EMBEDDING:
-        title = 'DreaMS embeddings'
 
     # Preallocate memory for predictions
     num_samples = len(spectra)
@@ -193,7 +195,7 @@ def dreams_predictions(
 
     progress_bar = tqdm(
         total=num_samples,
-        desc='Computing ' + title.replace('_', ' '),
+        desc='Computing ' + title.replace('_', ' ') + 's',  # 's' for plural (NOTE: will not work with e.g. "probability")
         disable=not progress_bar,
         file=tqdm_logger if logger_pth else None
     )
@@ -214,12 +216,16 @@ def dreams_predictions(
 
     preds = preds.squeeze().numpy()
 
+    if store_preds:
+        msdata.add_column(title, preds)
+
     return preds
 
 
-def dreams_embeddings(pth, batch_size=32, progress_bar=True, logger_pth=None, **msdata_kwargs):
+def dreams_embeddings(pth, batch_size=32, progress_bar=True, logger_pth=None, store_embs=False, **msdata_kwargs):
     return dreams_predictions(
-        DREAMS_EMBEDDING, pth, batch_size=batch_size, progress_bar=progress_bar, logger_pth=logger_pth, **msdata_kwargs
+        DREAMS_EMBEDDING, pth, batch_size=batch_size, progress_bar=progress_bar, logger_pth=logger_pth,
+        store_preds=store_embs, **msdata_kwargs
     )
 
 
