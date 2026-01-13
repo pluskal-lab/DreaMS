@@ -679,19 +679,19 @@ class DreaMSSearch:
             ref_spectra = du.MSData.load(ref_spectra, in_mem=True, mode='a' if self.store_embs else 'r')
         self.ref_spectra = ref_spectra
         if DREAMS_EMBEDDING in self.ref_spectra.columns():
-            embs_ref = self.ref_spectra[DREAMS_EMBEDDING]
+            self.embs_ref = self.ref_spectra[DREAMS_EMBEDDING]
         else:
-            embs_ref = dreams_embeddings(self.ref_spectra, store_embs=self.store_embs)
-        embs_ref = embs_ref.astype('float32', copy=False)
-        if embs_ref.ndim == 1:
-            embs_ref = embs_ref[np.newaxis, :]
+            self.embs_ref = dreams_embeddings(self.ref_spectra, store_embs=self.store_embs)
+        self.embs_ref = self.embs_ref.astype('float32', copy=False)
+        if self.embs_ref.ndim == 1:
+            self.embs_ref = self.embs_ref[np.newaxis, :]
 
         # Build search index
         if self.verbose:
             print(f'Building search index (num spectra: {len(self.ref_spectra):,})...')
-        faiss.normalize_L2(embs_ref)
-        self.index = faiss.IndexFlatIP(embs_ref.shape[1])
-        self.index.add(embs_ref)
+        faiss.normalize_L2(self.embs_ref)
+        self.index = faiss.IndexFlatIP(self.embs_ref.shape[1])
+        self.index.add(self.embs_ref)
 
     def query(
         self,
@@ -700,7 +700,8 @@ class DreaMSSearch:
         k: int = 10,
         dreams_sim_thld: float = -np.inf,
         out_all_metadata: bool = True,
-        out_spectra: bool = True
+        out_spectra: bool = True,
+        out_embs: bool = False
     ):
         if k > len(self.ref_spectra):
             raise ValueError(f'Requested more neighbors ({k})) than available in the reference spectral library '
@@ -747,16 +748,21 @@ class DreaMSSearch:
                     # Add all metadata columns for query and reference spectra
                     if out_all_metadata:
                         for col in query_spectra.columns():
-                            if col not in main_cols + [SPECTRUM]:
+                            if col not in main_cols + [SPECTRUM, DREAMS_EMBEDDING]:
                                 row[f'{col}'] = query_spectra.get_values(col, i)
                         for col in self.ref_spectra.columns():
-                            if col not in main_cols + [SPECTRUM]:
+                            if col not in main_cols + [SPECTRUM, DREAMS_EMBEDDING]:
                                 row[f'ref_{col}'] = self.ref_spectra.get_values(col, j)
 
                     # Add spectra columns for query and reference spectra
                     if out_spectra:
                         row[SPECTRUM] = query_spectra.get_spectra(i)
                         row[f'ref_{SPECTRUM}'] = self.ref_spectra.get_spectra(j)
+                    
+                    # Add DreaMS embeddings for query and reference spectra
+                    if out_embs:
+                        row[DREAMS_EMBEDDING] = embs[i].tolist()
+                        row[f'ref_{DREAMS_EMBEDDING}'] = self.embs_ref[j].tolist()
 
                     # Add DreaMS similarity, top-k index, and query/reference index
                     row.update({
