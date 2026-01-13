@@ -447,7 +447,6 @@ def read_mgf(pth, **kwargs):
 
 
 def read_mzml(pth: Union[Path, str], verbose: bool = False, scan_range: Optional[Tuple[int, int]] = None):
-    import pyopenms
 
     if isinstance(pth, str):
         pth = Path(pth)

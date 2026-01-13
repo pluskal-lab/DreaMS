@@ -1,10 +1,18 @@
 import os
+import sys
 from setuptools import setup, find_packages
 
 # Get the long description from the README file
 here = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(here, "README.md"), encoding="utf-8") as f:
     long_description = f.read()
+
+# Platform-specific pyopenms version (TMP workaround for macOS)
+def get_pyopenms_dep():
+    if sys.platform.lower().startswith("darwin"):
+        return "pyopenms==3.3.0"  # macOS
+    else:  # sys.platform.lower().startswith("linux"):
+        return "pyopenms==3.4.0"  # Linux or other platforms
 
 setup(
     name="dreams",
@@ -33,7 +41,7 @@ setup(
         "wandb==0.16.4",
         "pandarallel==1.6.5",
         "matchms==0.27.0",
-        "pyopenms==3.4.0",
+        get_pyopenms_dep(),
         "igraph==0.11.4",
         "molplotly==1.1.7",
         "fire==0.6.0",
