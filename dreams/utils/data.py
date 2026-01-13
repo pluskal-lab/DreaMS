@@ -220,8 +220,7 @@ class MSData:
 
     def __del__(self):
         try:
-            if hasattr(self, 'f') and self.f is not None and isinstance(self.f, h5py.File):
-                self.f.close()
+            self.f.close()
         except Exception as e:
             return
 
@@ -493,9 +492,14 @@ class MSData:
         if self.mode != 'a':
             raise ValueError('Adding new columns is allowed only in append mode. Initialize msdata as '
                              '`MSData(..., mode="a")` to add new columns.')
-        if remove_old_if_exists and name in self.columns():
-            self.remove_column(name)
+        if name in self.columns():
+            if remove_old_if_exists:
+                self.remove_column(name)
+            else:
+                raise ValueError(f'Column "{name}" already exists. Use `remove_old_if_exists=True` to overwrite it.')
         self.f.create_dataset(name, data=data)
+        if self.in_mem:
+            self.data[name] = self.load_col_in_mem(self.f[name])
 
     def rename_column(self, old_name, new_name, remove_old_if_exists=False):
         if remove_old_if_exists and new_name in self.columns():
