@@ -455,9 +455,12 @@ def plot_spectrum(
         save_pth=None,
         prec_mz=None,
         mirror_prec_mz=None,
-        normalize_intensities=True
+        normalize_intensities=True,
+        spec_text=None,
+        mirror_spec_text=None
 ):
     """
+    TODO: Whole function should be refactored, it is a mess.
     Plots a mass spectrum with optional mirror spectrum and highlighted peaks.
 
     Args:
@@ -473,6 +476,8 @@ def plot_spectrum(
     - save_pth: Path to save the plot.
     - prec_mz: Precursor m/z value to display.
     - mirror_prec_mz: Precursor m/z value of the mirror spectrum to display.
+    - spec_text: Text to display on the spectrum.
+    - mirror_spec_text: Text to display on the mirror spectrum.
     """
 
     if colors == 'nature':
@@ -482,6 +487,19 @@ def plot_spectrum(
         assert len(colors) >= 3
     else:
         colors = ['blue', 'green', 'red']
+
+    fast_path = (
+        hue is None
+        and xlim is None
+        and ylim is None
+        and highl_idx is None
+        and high_peaks_at is None
+        and save_pth is None
+        and prec_mz is None
+        and mirror_prec_mz is None
+        and spec_text is None
+        and mirror_spec_text is None
+    )
 
     def process_spectrum(s):
         # Check if spectrum has correct shape and transpose if necessary
@@ -504,6 +522,34 @@ def plot_spectrum(
     # Initialize plotting
     init_plotting(figsize=figsize)
     fig, ax = plt.subplots(1, 1)
+
+    if fast_path:
+        ax.vlines(mzs, 0, ins, colors=colors[0], zorder=2)
+        ax.scatter(mzs, ins, edgecolors=colors[0], facecolors='white', zorder=3, linewidths=0.8, s=16)
+
+        if mirror_spec is not None:
+            mzs_m, ins_m = process_spectrum(mirror_spec)
+
+            ax.vlines(mzs_m, 0, -ins_m, colors=colors[2], zorder=1)
+            ax.scatter(mzs_m, -ins_m, edgecolors=colors[2], facecolors='white', zorder=3, linewidths=0.8, s=16)
+
+            @ticker.FuncFormatter
+            def major_formatter(x, _pos):
+                label = str(round(-x)) if x < 0 else str(round(x))
+                return label
+
+            ax.yaxis.set_major_formatter(major_formatter)
+
+            combined_max_mz = max(mzs.max(), mzs_m.max())
+        else:
+            combined_max_mz = mzs.max()
+
+        plt.xlim(0, combined_max_mz + 10)
+        plt.xlabel('m/z')
+        plt.ylabel('Intensity [%]' if normalize_intensities else 'Intensity')
+        plt.show()
+        return
+
     if high_peaks_at:
         highl_idx = [utils.get_closest_values(mzs, query_val=m, return_idx=True).item() for m in high_peaks_at]
 
@@ -550,11 +596,15 @@ def plot_spectrum(
     plt.ylabel('Intensity [%]' if normalize_intensities else 'Intensity')
 
     # Add precursor m/z annotations
-    if prec_mz is not None:
-        ax.text(0.05, 0.95, f'Precursor m/z: {prec_mz:.2f}', transform=ax.transAxes,
+    if prec_mz is not None or spec_text is not None:
+        text = f'Precursor m/z: {prec_mz:.2f}' if prec_mz is not None else ''
+        text += f'{spec_text}' if spec_text is not None else ''
+        ax.text(0.05, 0.95, text, transform=ax.transAxes,
                 fontsize=10, verticalalignment='top', horizontalalignment='left', bbox=dict(facecolor='white', alpha=0.4))
-    if mirror_prec_mz is not None:
-        ax.text(0.05, 0.05, f'Precursor m/z: {mirror_prec_mz:.2f}', transform=ax.transAxes,
+    if mirror_prec_mz is not None or mirror_spec_text is not None:
+        text = f'Precursor m/z: {mirror_prec_mz:.2f}' if mirror_prec_mz is not None else ''
+        text += f'{mirror_spec_text}' if mirror_spec_text is not None else ''
+        ax.text(0.05, 0.05, text, transform=ax.transAxes,
                 fontsize=10, verticalalignment='bottom', horizontalalignment='left', bbox=dict(facecolor='white', alpha=0.4))
 
     if save_pth is not None:
@@ -590,11 +640,17 @@ def df_to_MSnSpectra(df, assert_is_valid=True, as_new_column=False):
 
 def num_hot_classes(max_val: float, bin_size: float) -> int:
     num_classes = max_val / bin_size
-    assert num_classes.is_integer()
+    assert num_classes == int(num_classes)
     return int(num_classes)
 
 
-def to_classes(vals: torch.Tensor, max_val: float, bin_size: float, special_vals=(), return_num_classes=False):
+def to_classes(
+    vals: torch.Tensor,
+    max_val: float,
+    bin_size: float,
+    special_vals: List[float] = (),
+    return_num_classes: bool = False
+) -> torch.Tensor:
     """ Assumes that last dimension of mzs is singleton. """
     special_masks = [vals == v for v in special_vals]
     num_classes = num_hot_classes(max_val, bin_size)
@@ -602,8 +658,8 @@ def to_classes(vals: torch.Tensor, max_val: float, bin_size: float, special_vals
     classes = classes.clamp(max=num_classes - 1)  # clamp not to have a separate class for max_mz
     for i, m in enumerate(special_masks):
         classes[m] = num_classes + i
-    if return_num_classes:
-        return classes, num_classes + len(special_vals)
+    # if return_num_classes:
+    #     return classes, num_classes + len(special_vals)
     return classes
 
 
