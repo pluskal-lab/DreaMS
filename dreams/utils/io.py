@@ -329,7 +329,9 @@ def read_textual_ms_format(
         adduct_name=['ADDUCT'],
         smiles_name=['SMILES'],
         rt_name=['RTINSECONDS', 'RETENTION_TIME', 'RTINMINUTES', 'RT'],
-        feature_id_name=['FEATURE_ID', 'SCAN_NUMBER'],
+        ionmode_name=['IONMODE'],
+        feature_id_name=['FEATURE_ID'],
+        scan_number_name=['SCAN_NUMBER'],
         name_name=['NAME'],
         ignore_line_prefixes=(),
         encoding='utf-8',
@@ -354,6 +356,12 @@ def read_textual_ms_format(
     if smiles_name:
         for smiles_name_i in smiles_name:
             attr_mapping[smiles_name_i] = SMILES
+    if scan_number_name:
+        for scan_number_name_i in scan_number_name:
+            attr_mapping[scan_number_name_i] = SCAN_NUMBER
+    if ionmode_name:
+        for ionmode_name_i in ionmode_name:
+            attr_mapping[ionmode_name_i] = IONMODE
     if name_name:
         for name_name_i in name_name:
             attr_mapping[name_name_i] = NAME
@@ -362,7 +370,7 @@ def read_textual_ms_format(
             attr_mapping[rt_name_i] = RT
     if feature_id_name:
         for feature_id_name_i in feature_id_name:
-            attr_mapping[feature_id_name_i] = SCAN_NUMBER  # Here it is a scan number, not a feature id, to be consistent with mzml reader
+            attr_mapping[feature_id_name_i] = FEATURE_ID
 
     data = []
     with open(pth, 'r', encoding=encoding) as f:
@@ -408,6 +416,28 @@ def read_textual_ms_format(
                 if not utils.is_float(v):
                     raise ValueError(f'Invalid value for {k}: {v}')
                 v = float(v)
+            
+            # Parse ionization mode
+            if k == IONMODE:
+                v = v.lower()
+                if 'pos' in v:
+                    v = '+'
+                elif 'neg' in v:
+                    v = '-'
+                else:
+                    raise ValueError(f'Invalid value for {k}: {v}')
+
+            # Parse charge
+            if k == CHARGE:
+                try:
+                    if isinstance(v, str):
+                        sign = 1
+                        if '-' in v:
+                            sign = -1
+                        v = sign * int(v.replace('-', '').replace('+', ''))
+                        v = int(v)
+                except ValueError:
+                    raise ValueError(f'Invalid value for {k}: {v}')
 
             spec[k] = v
             continue
