@@ -671,8 +671,8 @@ class DreaMSSearch:
         self.store_embs = store_embs
 
         # Fixes weird script hanging on macOS caused by the index.search method
-        if sys.platform.lower().startswith('darwin'):
-            faiss.omp_set_num_threads(1)
+        # if sys.platform.lower().startswith('darwin'):
+        faiss.omp_set_num_threads(1)
 
         # Compute embeddings for reference spectra
         if not isinstance(ref_spectra, du.MSData):
