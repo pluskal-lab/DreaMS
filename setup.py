@@ -45,7 +45,7 @@ setup(
         "igraph==0.11.4",
         "molplotly==1.1.7",
         "fire==0.6.0",
-        "huggingface_hub==0.28.1",
+        "huggingface_hub==0.33.5",
         "msml @ git+https://github.com/roman-bushuiev/msml_legacy_architectures.git@main"
     ],
     extras_require={
