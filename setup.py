@@ -60,9 +60,9 @@ setup(
             "jupyter==1.0.0",
             "ipywidgets==8.1.3",
         ],
-        "search": [
-            "faiss-cpu==1.9.0",
-        ],
+        # "search": [
+        #     "faiss-cpu==1.9.0",
+        # ],
     },
     classifiers=[
         "Programming Language :: Python :: 3",

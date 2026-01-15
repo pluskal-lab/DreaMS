@@ -15,6 +15,8 @@ from tqdm import tqdm
 from pathlib import Path
 from collections import deque
 from torch.utils.data.dataloader import DataLoader
+from sklearn.neighbors import NearestNeighbors
+from sklearn.preprocessing import normalize
 from argparse import Namespace
 import dreams.utils.data as du
 import dreams.utils.io as io
@@ -24,11 +26,6 @@ import dreams.utils.misc as utils
 from dreams.models.dreams.dreams import DreaMS as DreaMSModel
 from dreams.models.heads.heads import *
 from dreams.definitions import *
-
-try:
-    import faiss
-except ImportError:
-    faiss = None
 
 
 if platform.system() == 'Windows':
@@ -664,15 +661,8 @@ class DreaMSSearch:
         verbose: bool = True,
         store_embs: bool = True
     ):
-        if faiss is None:
-            raise ImportError('Faiss is not installed. Please install it using `pip install faiss==1.9.0`.')
-
         self.verbose = verbose
         self.store_embs = store_embs
-
-        # Fixes weird script hanging on macOS caused by the index.search method
-        # if sys.platform.lower().startswith('darwin'):
-        faiss.omp_set_num_threads(1)
 
         # Compute embeddings for reference spectra
         if not isinstance(ref_spectra, du.MSData):
@@ -686,12 +676,15 @@ class DreaMSSearch:
         if self.embs_ref.ndim == 1:
             self.embs_ref = self.embs_ref[np.newaxis, :]
 
-        # Build search index
+        # Build search index using sklearn NearestNeighbors (cosine similarity)
         if self.verbose:
             print(f'Building search index (num spectra: {len(self.ref_spectra):,})...')
-        faiss.normalize_L2(self.embs_ref)
-        self.index = faiss.IndexFlatIP(self.embs_ref.shape[1])
-        self.index.add(self.embs_ref)
+        self.embs_ref = normalize(self.embs_ref, norm='l2')
+        self.index = NearestNeighbors(
+            n_neighbors=1, # real 'k' will be overridden at query time
+            algorithm='auto', metric='cosine'
+        )
+        self.index.fit(self.embs_ref)
 
     def query(
         self,
@@ -723,12 +716,13 @@ class DreaMSSearch:
         embs = embs.astype('float32', copy=False)
         if embs.ndim == 1:
             embs = embs[np.newaxis, :]
-        faiss.normalize_L2(embs)
+        embs = normalize(embs, norm='l2')
 
-        # Search for top-k neighbors
+        # Search for top-k neighbors using cosine similarity
         if self.verbose:
             print(f'Searching for top-{k} neighbors...')
-        similarities, idx = self.index.search(embs, k=k)
+        distances, idx = self.index.kneighbors(embs, n_neighbors=k, return_distance=True)
+        similarities = 1 - distances
 
         # Build DataFrame with results
         df = []
