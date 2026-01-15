@@ -663,8 +663,6 @@ class DreaMSSearch:
     ):
         self.verbose = verbose
         self.store_embs = store_embs
-
-        # Compute embeddings for reference spectra
         if not isinstance(ref_spectra, du.MSData):
             ref_spectra = du.MSData.load(ref_spectra, in_mem=True, mode='a' if self.store_embs else 'r')
         self.ref_spectra = ref_spectra
@@ -675,16 +673,35 @@ class DreaMSSearch:
         self.embs_ref = self.embs_ref.astype('float32', copy=False)
         if self.embs_ref.ndim == 1:
             self.embs_ref = self.embs_ref[np.newaxis, :]
-
-        # Build search index using sklearn NearestNeighbors (cosine similarity)
         if self.verbose:
-            print(f'Building search index (num spectra: {len(self.ref_spectra):,})...')
-        self.embs_ref = normalize(self.embs_ref, norm='l2')
-        self.index = NearestNeighbors(
-            n_neighbors=1, # real 'k' will be overridden at query time
-            algorithm='auto', metric='cosine'
-        )
-        self.index.fit(self.embs_ref)
+            print(f'Prepared reference embeddings (num spectra: {len(self.ref_spectra):,})...')
+
+    def _batched_torch_knn(self, query: np.ndarray, k: int, batch_size: int = 1024):
+        """We have this because faiss seems to often hang and hard to install and sklearn is slow"""
+
+        # Prepare embeddings
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        emb_ref = torch.from_numpy(self.embs_ref).to(device)  # We keep from_numpy because embs can be loaded from disk
+        emb_ref = torch.nn.functional.normalize(emb_ref, dim=1)
+        query = torch.from_numpy(query).to(device)
+        query = torch.nn.functional.normalize(query, dim=1)
+
+        # Search for neighbors
+        batch_size = min(batch_size, query.shape[0])
+        all_topk_scores, all_topk_idx = [], []
+        with tqdm(total=len(query), desc='Searching for similar spectra', disable=not self.verbose) as pbar:
+            for i in range(0, len(query), batch_size):
+                qbatch = query[i:i+batch_size]  # (b, d)
+                sim = torch.mm(qbatch, emb_ref.t())  # (b, n_ref)
+                topk_scores, topk_idx = torch.topk(sim, k=k, dim=1)
+                all_topk_scores.append(topk_scores)
+                all_topk_idx.append(topk_idx)
+                pbar.update(qbatch.shape[0])
+
+        # Concatenate results
+        scores = torch.cat(all_topk_scores, dim=0).cpu().numpy()
+        idx = torch.cat(all_topk_idx, dim=0).cpu().numpy()
+        return idx, scores  # faiss-like API    
 
     def query(
         self,
@@ -694,7 +711,8 @@ class DreaMSSearch:
         dreams_sim_thld: float = -np.inf,
         out_all_metadata: bool = True,
         out_spectra: bool = True,
-        out_embs: bool = False
+        out_embs: bool = False,
+        batch_size: int = 1024
     ):
         if k > len(self.ref_spectra):
             raise ValueError(f'Requested more neighbors ({k})) than available in the reference spectral library '
@@ -709,20 +727,18 @@ class DreaMSSearch:
         # Compute embeddings for query spectra
         if not isinstance(query_spectra, du.MSData):
             query_spectra = du.MSData.load(query_spectra, in_mem=True, mode='a' if self.store_embs else 'r')
-        if DREAMS_EMBEDDING in query_spectra.columns():
+        if DREAMS_EMBEDDING in query_spectra.columns(): 
             embs = query_spectra[DREAMS_EMBEDDING]
         else:
             embs = dreams_embeddings(query_spectra, store_embs=self.store_embs)
         embs = embs.astype('float32', copy=False)
         if embs.ndim == 1:
             embs = embs[np.newaxis, :]
-        embs = normalize(embs, norm='l2')
 
-        # Search for top-k neighbors using cosine similarity
+        # Search for top-k neighbors
         if self.verbose:
             print(f'Searching for top-{k} neighbors...')
-        distances, idx = self.index.kneighbors(embs, n_neighbors=k, return_distance=True)
-        similarities = 1 - distances
+        idx, similarities = self._batched_torch_knn(embs, k, batch_size=batch_size)
 
         # Build DataFrame with results
         df = []
