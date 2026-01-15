@@ -15,8 +15,6 @@ from tqdm import tqdm
 from pathlib import Path
 from collections import deque
 from torch.utils.data.dataloader import DataLoader
-from sklearn.neighbors import NearestNeighbors
-from sklearn.preprocessing import normalize
 from argparse import Namespace
 import dreams.utils.data as du
 import dreams.utils.io as io
