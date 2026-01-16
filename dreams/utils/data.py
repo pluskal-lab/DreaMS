@@ -349,6 +349,15 @@ class MSData:
         return MSData.from_pandas(df, hdf5_pth=hdf5_pth, **kwargs)
 
     @staticmethod
+    def from_mzxml(
+        pth: Union[Path, str],
+        scan_range: Optional[Tuple[int, int]] = None,
+        verbose_parser: bool = False,
+        **kwargs
+    ):
+        MSData.from_mzml(pth, scan_range=scan_range, verbose_parser=verbose_parser, **kwargs)
+
+    @staticmethod
     def from_msp(pth: Union[Path, str], in_mem=True, **kwargs):
         raise NotImplementedError('Not tested but should work.')
         pth = Path(pth)
@@ -375,6 +384,8 @@ class MSData:
             return MSData.from_hdf5(pth, in_mem=in_mem, **kwargs)
         elif pth.suffix.lower() == '.mzml':
             return MSData.from_mzml(pth, in_mem=in_mem, **kwargs)
+        elif pth.suffix.lower() == '.mzxml':
+            return MSData.from_mzxml(pth, in_mem=in_mem, **kwargs)
         elif pth.suffix.lower() == '.msp':
             return MSData.from_msp(pth, in_mem=in_mem, **kwargs)
         elif pth.suffix.lower() == '.mgf':
