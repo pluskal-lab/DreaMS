@@ -355,7 +355,7 @@ class MSData:
         verbose_parser: bool = False,
         **kwargs
     ):
-        MSData.from_mzml(pth, scan_range=scan_range, verbose_parser=verbose_parser, **kwargs)
+        return MSData.from_mzml(pth, scan_range=scan_range, verbose_parser=verbose_parser, **kwargs)
 
     @staticmethod
     def from_msp(pth: Union[Path, str], in_mem=True, **kwargs):
