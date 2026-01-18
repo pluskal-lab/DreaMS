@@ -528,13 +528,13 @@ class MSData:
         self.f[name].resize((self.f[name].shape[0] + data.shape[0], *data.shape[1:]))
         self.f[name][-data.shape[0]:] = data
 
-    def form_subset(self, idx, out_pth, verbose=False):
+    def form_subset(self, idx, out_pth, verbose=False, **kwargs):
         with h5py.File(out_pth, 'w') as f:
             for k in self.columns():
                 if verbose:
                     print(f'Creating dataset "{k}"...')
                 f.create_dataset(k, data=self.get_values(k, decode_strings=False)[:][idx], dtype=self.f[k].dtype)
-        return MSData(out_pth)
+        return MSData(out_pth, **kwargs)
 
     def spec_to_matchms(self, i: int) -> Spectrum:
         spec = su.unpad_peak_list(self.get_spectra(i))
