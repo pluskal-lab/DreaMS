@@ -1,6 +1,6 @@
 import fire
 import pandas as pd
-from dreams.api import DreaMSSearch
+from dreams.api import DreaMSSearch, predict_fluorine
 from dreams.utils.io import (
     lcmsms_to_hdf5, downloadpublicdata_to_hdf5s, merge_lcmsms_hdf5s, compress_hdf,
 )
@@ -29,4 +29,5 @@ if __name__ == '__main__':
         'compress_hdf5': compress_hdf,
         'subset_lsh': subset_lsh,
         'dreams_search': DreaMSSearch,
+        'dreams_fluorine': predict_fluorine,
     }, serialize=serialize)

@@ -800,3 +800,110 @@ class DreaMSSearch:
             if self.verbose:
                 print(f'Saved results to {out_path}')
         return df
+
+
+def predict_fluorine(in_dir: T.Union[Path, str], verbose: bool = True):
+    """Predict fluorine probabilities for a directory of spectra.
+    Args:
+        in_dir: Path to the directory containing the spectra.
+        verbose: Whether to print verbose output.
+
+    Returns:
+        DataFrame with the predictions stored as `dreams_fluorine_predictions.csv` in the input directory.
+    """
+    if not isinstance(in_dir, Path):
+        in_dir = Path(in_dir)
+
+    in_pths = list(in_dir.glob('*.mzML'))
+    model_ckpt_111k = PRETRAINED / 'dreams_fluorine_epoch=30-step=111000.ckpt'
+    model_ckpt_7k = PRETRAINED / 'dreams_fluorine_epoch=1-step=7000.ckpt'
+
+    n_highest_peaks = 100
+
+    # Load model
+    model_111k = PreTrainedModel.from_ckpt(
+        ckpt_path=model_ckpt_111k,
+        ckpt_cls=BinClassificationHead,
+        n_highest_peaks=n_highest_peaks,
+    )
+    model_7k = PreTrainedModel.from_ckpt(
+        ckpt_path=model_ckpt_7k,
+        ckpt_cls=BinClassificationHead,
+        n_highest_peaks=n_highest_peaks,
+    )
+
+    if verbose:
+        print(f'Going to process {len(in_pths)} files...')
+    dfs = []
+    for in_pth in tqdm(in_pths, desc='Processing files', disable=not verbose):
+        if verbose:
+            print(f'Processing {in_pth}...')
+
+        # Load data
+        try:
+            msdata = du.MSData.load(in_pth, in_mem=True)
+        except ValueError as e:
+            if verbose:
+                print(f'Skipping {in_pth} because of {e}.')
+            continue
+
+        # Compute fluorine probabilties
+        df = msdata.to_pandas()
+        for model_name, model in [('111k_steps', model_111k), ('7k_steps', model_7k)]:
+            f_preds = dreams_predictions(
+                spectra=msdata,
+                model_ckpt=model,
+                n_highest_peaks=n_highest_peaks
+            )
+            df[f'F_preds_{model_name}'] = f_preds
+
+        # Add spectral quality tags
+        df['dformat'] = df.apply(lambda x: dformats.assign_dformat(np.array(x['spectrum']), x['precursor_mz']), axis=1)
+        dfs.append(df)
+    df = pd.concat(dfs, ignore_index=True)
+
+    # Set F_preds to 0 for charge > 1
+    df.loc[df['charge'] > 1, ['F_preds_111k_steps', 'F_preds_7k_steps']] = 0
+
+    # Assign tags
+    df['tag'] = ''
+
+    # Both checkpoints pass threshold
+    df.loc[(df['F_preds_111k_steps'] > 0.75) & (df['F_preds_7k_steps'] > 0.75), 'tag'] = '> 0.75 hit'
+    df.loc[(df['F_preds_111k_steps'] > 0.9) & (df['F_preds_7k_steps'] > 0.9), 'tag'] = '> 0.9 hit'
+    df.loc[(df['F_preds_111k_steps'] > 0.95) & (df['F_preds_7k_steps'] > 0.95), 'tag'] = '> 0.95 hit'
+
+    # Only 111k checkpoint passes threshold
+    df.loc[(df['F_preds_111k_steps'] > 0.95) & (df['tag'] == ''), 'tag'] = 'Only 111k checkpoint > 0.95 hit'
+    df.loc[(df['F_preds_111k_steps'] > 0.9) & (df['tag'] == ''), 'tag'] = 'Only 111k checkpoint > 0.9 hit' 
+    df.loc[(df['F_preds_111k_steps'] > 0.75) & (df['tag'] == ''), 'tag'] = 'Only 111k checkpoint > 0.75 hit'
+
+    # Mark low quality spectra
+    df.loc[(df['dformat'] != 'A') & (df['tag'] != ''), 'tag'] = 'Low quality ' + df.loc[(df['dformat'] != 'A') & (df['tag'] != ''), 'tag']
+    df['tag'] = df['tag'].str.strip()
+
+    # Sort tags and F_preds_111k_steps within each tag group
+    df = df.sort_values(
+        by=['tag', 'F_preds_111k_steps'], 
+        key=lambda x: x.map({
+            '> 0.95 hit': 0,
+            '> 0.9 hit': 1,
+            '> 0.75 hit': 2,
+            'Only 111k checkpoint > 0.95 hit': 3,
+            'Only 111k checkpoint > 0.9 hit': 4,
+            'Only 111k checkpoint > 0.75 hit': 5,
+            'Low quality > 0.95 hit': 6,
+            'Low quality > 0.9 hit': 7,
+            'Low quality > 0.75 hit': 8,
+            'Low quality Only 111k checkpoint > 0.95 hit': 9,
+            'Low quality Only 111k checkpoint > 0.9 hit': 10,
+            'Low quality Only 111k checkpoint > 0.75 hit': 11,
+            '': 12
+        }) if x.name == 'tag' else x,
+        ascending=[True, False]
+    )
+
+    # Store predictions
+    df.to_csv(in_dir / 'dreams_fluorine_predictions.csv', index=False)
+
+    return df

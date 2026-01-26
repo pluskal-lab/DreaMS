@@ -28,6 +28,7 @@ Contents
    tutorials/spectral_quality
    tutorials/atlas
    tutorials/pre_trained_module
+   tutorials/dreams_fluorine
 
 .. toctree::
    :maxdepth: 2
