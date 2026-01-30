@@ -802,10 +802,15 @@ class DreaMSSearch:
         return df
 
 
-def predict_fluorine(in_dir: T.Union[Path, str], verbose: bool = True):
+def predict_fluorine(
+    in_dir: T.Union[Path, str],
+    file_extensions: T.List[str] = ['.mzml', '.mzxml', '.mgf'],
+    verbose: bool = True,
+):
     """Predict fluorine probabilities for a directory of spectra.
     Args:
         in_dir: Path to the directory containing the spectra.
+        file_extensions: List of file extensions to process.
         verbose: Whether to print verbose output.
 
     Returns:
@@ -814,7 +819,10 @@ def predict_fluorine(in_dir: T.Union[Path, str], verbose: bool = True):
     if not isinstance(in_dir, Path):
         in_dir = Path(in_dir)
 
-    in_pths = list(in_dir.glob('*.mzML'))
+    in_pths = sorted(
+        pth for pth in in_dir.iterdir()
+        if pth.is_file() and pth.suffix.lower() in file_extensions
+    )
     model_ckpt_111k = PRETRAINED / 'dreams_fluorine_epoch=30-step=111000.ckpt'
     model_ckpt_7k = PRETRAINED / 'dreams_fluorine_epoch=1-step=7000.ckpt'
 
@@ -853,7 +861,8 @@ def predict_fluorine(in_dir: T.Union[Path, str], verbose: bool = True):
             f_preds = dreams_predictions(
                 spectra=msdata,
                 model_ckpt=model,
-                n_highest_peaks=n_highest_peaks
+                n_highest_peaks=n_highest_peaks,
+                title=f'DreaMS-Fluorine ({model_name.replace("_", " ")}) score'
             )
             df[f'F_preds_{model_name}'] = f_preds
 
