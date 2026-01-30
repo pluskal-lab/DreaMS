@@ -449,8 +449,14 @@ def read_textual_ms_format(
             spec[SPECTRUM][0].append(mz)
             spec[SPECTRUM][1].append(intensity)
             continue
+    
+    # Convert to DataFrame
+    df = pd.DataFrame(data)
 
-    return pd.DataFrame(data)
+    # Add file name column
+    df[FILE_NAME] = pth.name
+
+    return df
 
 
 def read_msp(pth, **kwargs):
