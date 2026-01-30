@@ -55,6 +55,8 @@ ID = 'id'
 DREAMS_EMBEDDING = 'DreaMS_embedding'
 RT = 'RT'
 SCAN_NUMBER = 'scan_number'
+FEATURE_ID = 'feature_id'
+IONMODE = 'ionmode'
 FILE_NAME = 'file_name'
 NAME = 'name'
 

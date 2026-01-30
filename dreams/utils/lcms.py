@@ -319,14 +319,14 @@ def get_pwiz_stats(msdata):
 
     pwiz_stats = Counter()
     for i, spectrum in enumerate(msdata):
-        spec_type = spectrum.getType()
         for dp in spectrum.getDataProcessing():
             pwiz = 'proteowizard' in dp.getSoftware().getName().lower()
             conversion_mzml = pyms.ProcessingAction.CONVERSION_MZML in dp.getProcessingActions()
             if pwiz and conversion_mzml:
-                pwiz_stats['pwiz_to_mzml_type={}'.format(pyopenms_type_to_spectype(spec_type))] += 1
+                spec_type = get_spectrum_type(spectrum)
+                pwiz_stats['pwiz_to_mzml_type={}'.format(spec_type.value)] += 1
                 peaks = spectrum.get_peaks()
-                if spec_type == pyms.SpectrumSettings.SpectrumType.PEAKS and peaks and np.count_nonzero(peaks[1] == 0):
+                if spec_type == SpecType.CENTROID and peaks and np.count_nonzero(peaks[1] == 0):
                     pwiz_stats[f'pwiz_zero_mz_centroid'] += 1
     return pwiz_stats
 

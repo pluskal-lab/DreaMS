@@ -25,11 +25,6 @@ from dreams.models.dreams.dreams import DreaMS as DreaMSModel
 from dreams.models.heads.heads import *
 from dreams.definitions import *
 
-try:
-    import faiss
-except ImportError:
-    faiss = None
-
 
 if platform.system() == 'Windows':
     pathlib.PosixPath = pathlib.WindowsPath
@@ -664,34 +659,47 @@ class DreaMSSearch:
         verbose: bool = True,
         store_embs: bool = True
     ):
-        if faiss is None:
-            raise ImportError('Faiss is not installed. Please install it using `pip install faiss==1.9.0`.')
-
         self.verbose = verbose
         self.store_embs = store_embs
-
-        # Fixes weird script hanging on macOS caused by the index.search method
-        if sys.platform.lower().startswith('darwin'):
-            faiss.omp_set_num_threads(1)
-
-        # Compute embeddings for reference spectra
         if not isinstance(ref_spectra, du.MSData):
             ref_spectra = du.MSData.load(ref_spectra, in_mem=True, mode='a' if self.store_embs else 'r')
         self.ref_spectra = ref_spectra
         if DREAMS_EMBEDDING in self.ref_spectra.columns():
-            embs_ref = self.ref_spectra[DREAMS_EMBEDDING]
+            self.embs_ref = self.ref_spectra[DREAMS_EMBEDDING]
         else:
-            embs_ref = dreams_embeddings(self.ref_spectra, store_embs=self.store_embs)
-        embs_ref = embs_ref.astype('float32', copy=False)
-        if embs_ref.ndim == 1:
-            embs_ref = embs_ref[np.newaxis, :]
-
-        # Build search index
+            self.embs_ref = dreams_embeddings(self.ref_spectra, store_embs=self.store_embs)
+        self.embs_ref = self.embs_ref.astype('float32', copy=False)
+        if self.embs_ref.ndim == 1:
+            self.embs_ref = self.embs_ref[np.newaxis, :]
         if self.verbose:
-            print(f'Building search index (num spectra: {len(self.ref_spectra):,})...')
-        faiss.normalize_L2(embs_ref)
-        self.index = faiss.IndexFlatIP(embs_ref.shape[1])
-        self.index.add(embs_ref)
+            print(f'Prepared reference embeddings (num spectra: {len(self.ref_spectra):,})...')
+
+    def _batched_torch_knn(self, query: np.ndarray, k: int, batch_size: int = 1024):
+        """We have this because faiss seems to often hang and hard to install and sklearn is slow"""
+
+        # Prepare embeddings
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        emb_ref = torch.from_numpy(self.embs_ref).to(device)  # We keep from_numpy because embs can be loaded from disk
+        emb_ref = torch.nn.functional.normalize(emb_ref, dim=1)
+        query = torch.from_numpy(query).to(device)
+        query = torch.nn.functional.normalize(query, dim=1)
+
+        # Search for neighbors
+        batch_size = min(batch_size, query.shape[0])
+        all_topk_scores, all_topk_idx = [], []
+        with tqdm(total=len(query), desc='Searching for similar spectra', disable=not self.verbose) as pbar:
+            for i in range(0, len(query), batch_size):
+                qbatch = query[i:i+batch_size]  # (b, d)
+                sim = torch.mm(qbatch, emb_ref.t())  # (b, n_ref)
+                topk_scores, topk_idx = torch.topk(sim, k=k, dim=1)
+                all_topk_scores.append(topk_scores)
+                all_topk_idx.append(topk_idx)
+                pbar.update(qbatch.shape[0])
+
+        # Concatenate results
+        scores = torch.cat(all_topk_scores, dim=0).cpu().numpy()
+        idx = torch.cat(all_topk_idx, dim=0).cpu().numpy()
+        return idx, scores  # faiss-like API    
 
     def query(
         self,
@@ -700,7 +708,9 @@ class DreaMSSearch:
         k: int = 10,
         dreams_sim_thld: float = -np.inf,
         out_all_metadata: bool = True,
-        out_spectra: bool = True
+        out_spectra: bool = True,
+        out_embs: bool = False,
+        batch_size: int = 1024
     ):
         if k > len(self.ref_spectra):
             raise ValueError(f'Requested more neighbors ({k})) than available in the reference spectral library '
@@ -715,19 +725,18 @@ class DreaMSSearch:
         # Compute embeddings for query spectra
         if not isinstance(query_spectra, du.MSData):
             query_spectra = du.MSData.load(query_spectra, in_mem=True, mode='a' if self.store_embs else 'r')
-        if DREAMS_EMBEDDING in query_spectra.columns():
+        if DREAMS_EMBEDDING in query_spectra.columns(): 
             embs = query_spectra[DREAMS_EMBEDDING]
         else:
             embs = dreams_embeddings(query_spectra, store_embs=self.store_embs)
         embs = embs.astype('float32', copy=False)
         if embs.ndim == 1:
             embs = embs[np.newaxis, :]
-        faiss.normalize_L2(embs)
 
         # Search for top-k neighbors
         if self.verbose:
             print(f'Searching for top-{k} neighbors...')
-        similarities, idx = self.index.search(embs, k=k)
+        idx, similarities = self._batched_torch_knn(embs, k, batch_size=batch_size)
 
         # Build DataFrame with results
         df = []
@@ -747,16 +756,21 @@ class DreaMSSearch:
                     # Add all metadata columns for query and reference spectra
                     if out_all_metadata:
                         for col in query_spectra.columns():
-                            if col not in main_cols + [SPECTRUM]:
+                            if col not in main_cols + [SPECTRUM, DREAMS_EMBEDDING]:
                                 row[f'{col}'] = query_spectra.get_values(col, i)
                         for col in self.ref_spectra.columns():
-                            if col not in main_cols + [SPECTRUM]:
+                            if col not in main_cols + [SPECTRUM, DREAMS_EMBEDDING]:
                                 row[f'ref_{col}'] = self.ref_spectra.get_values(col, j)
 
                     # Add spectra columns for query and reference spectra
                     if out_spectra:
                         row[SPECTRUM] = query_spectra.get_spectra(i)
                         row[f'ref_{SPECTRUM}'] = self.ref_spectra.get_spectra(j)
+                    
+                    # Add DreaMS embeddings for query and reference spectra
+                    if out_embs:
+                        row[DREAMS_EMBEDDING] = embs[i].tolist()
+                        row[f'ref_{DREAMS_EMBEDDING}'] = self.embs_ref[j].tolist()
 
                     # Add DreaMS similarity, top-k index, and query/reference index
                     row.update({
@@ -786,3 +800,119 @@ class DreaMSSearch:
             if self.verbose:
                 print(f'Saved results to {out_path}')
         return df
+
+
+def predict_fluorine(
+    in_dir: T.Union[Path, str],
+    file_extensions: T.List[str] = ['.mzml', '.mzxml', '.mgf'],
+    verbose: bool = True,
+):
+    """Predict fluorine probabilities for a directory of spectra.
+    Args:
+        in_dir: Path to the directory containing the spectra.
+        file_extensions: List of file extensions to process.
+        verbose: Whether to print verbose output.
+
+    Returns:
+        DataFrame with the predictions stored as `dreams_fluorine_predictions.csv` in the input directory.
+    """
+    if not isinstance(in_dir, Path):
+        in_dir = Path(in_dir)
+
+    in_pths = sorted(
+        pth for pth in in_dir.iterdir()
+        if pth.is_file() and pth.suffix.lower() in file_extensions
+    )
+    model_ckpt_111k = PRETRAINED / 'dreams_fluorine_epoch=30-step=111000.ckpt'
+    model_ckpt_7k = PRETRAINED / 'dreams_fluorine_epoch=1-step=7000.ckpt'
+
+    n_highest_peaks = 100
+
+    # Load model
+    model_111k = PreTrainedModel.from_ckpt(
+        ckpt_path=model_ckpt_111k,
+        ckpt_cls=BinClassificationHead,
+        n_highest_peaks=n_highest_peaks,
+    )
+    model_7k = PreTrainedModel.from_ckpt(
+        ckpt_path=model_ckpt_7k,
+        ckpt_cls=BinClassificationHead,
+        n_highest_peaks=n_highest_peaks,
+    )
+
+    if verbose:
+        print(f'Going to process {len(in_pths)} files...')
+    dfs = []
+    for in_pth in tqdm(in_pths, desc='Processing files', disable=not verbose):
+        if verbose:
+            print(f'Processing {in_pth}...')
+
+        # Load data
+        try:
+            msdata = du.MSData.load(in_pth, in_mem=True)
+        except ValueError as e:
+            if verbose:
+                print(f'Skipping {in_pth} because of {e}.')
+            continue
+
+        # Compute fluorine probabilties
+        df = msdata.to_pandas()
+        for model_name, model in [('111k_steps', model_111k), ('7k_steps', model_7k)]:
+            f_preds = dreams_predictions(
+                spectra=msdata,
+                model_ckpt=model,
+                n_highest_peaks=n_highest_peaks,
+                title=f'DreaMS-Fluorine ({model_name.replace("_", " ")}) score'
+            )
+            df[f'F_preds_{model_name}'] = f_preds
+
+        # Add spectral quality tags
+        df['dformat'] = df.apply(lambda x: dformats.assign_dformat(np.array(x['spectrum']), x['precursor_mz']), axis=1)
+        dfs.append(df)
+    df = pd.concat(dfs, ignore_index=True)
+
+    # Set F_preds to 0 for charge > 1
+    df.loc[df['charge'] > 1, ['F_preds_111k_steps', 'F_preds_7k_steps']] = 0
+
+    # Assign tags
+    df['tag'] = ''
+
+    # Both checkpoints pass threshold
+    df.loc[(df['F_preds_111k_steps'] > 0.75) & (df['F_preds_7k_steps'] > 0.75), 'tag'] = '> 0.75 hit'
+    df.loc[(df['F_preds_111k_steps'] > 0.9) & (df['F_preds_7k_steps'] > 0.9), 'tag'] = '> 0.9 hit'
+    df.loc[(df['F_preds_111k_steps'] > 0.95) & (df['F_preds_7k_steps'] > 0.95), 'tag'] = '> 0.95 hit'
+
+    # Only 111k checkpoint passes threshold
+    df.loc[(df['F_preds_111k_steps'] > 0.95) & (df['tag'] == ''), 'tag'] = 'Only 111k checkpoint > 0.95 hit'
+    df.loc[(df['F_preds_111k_steps'] > 0.9) & (df['tag'] == ''), 'tag'] = 'Only 111k checkpoint > 0.9 hit' 
+    df.loc[(df['F_preds_111k_steps'] > 0.75) & (df['tag'] == ''), 'tag'] = 'Only 111k checkpoint > 0.75 hit'
+
+    # Mark low quality spectra
+    df.loc[(df['dformat'] != 'A') & (df['tag'] != ''), 'tag'] = 'Low quality ' + df.loc[(df['dformat'] != 'A') & (df['tag'] != ''), 'tag']
+    df['tag'] = df['tag'].str.strip()
+
+    # Sort tags and F_preds_111k_steps within each tag group
+    df = df.sort_values(
+        by=['tag', 'F_preds_111k_steps'], 
+        key=lambda x: x.map({
+            '> 0.95 hit': 0,
+            '> 0.9 hit': 1,
+            '> 0.75 hit': 2,
+            'Only 111k checkpoint > 0.95 hit': 3,
+            'Only 111k checkpoint > 0.9 hit': 4,
+            'Only 111k checkpoint > 0.75 hit': 5,
+            'Low quality > 0.95 hit': 6,
+            'Low quality > 0.9 hit': 7,
+            'Low quality > 0.75 hit': 8,
+            'Low quality Only 111k checkpoint > 0.95 hit': 9,
+            'Low quality Only 111k checkpoint > 0.9 hit': 10,
+            'Low quality Only 111k checkpoint > 0.75 hit': 11,
+            '': 12
+        }) if x.name == 'tag' else x,
+        ascending=[True, False]
+    )
+
+    # Store predictions
+    df.to_csv(in_dir / 'dreams_fluorine_predictions.csv', index=False)
+
+    return df

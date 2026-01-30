@@ -45,7 +45,7 @@ setup(
         "igraph==0.11.4",
         "molplotly==1.1.7",
         "fire==0.6.0",
-        "huggingface_hub==0.24.5",
+        "huggingface_hub==0.33.5",
         "msml @ git+https://github.com/roman-bushuiev/msml_legacy_architectures.git@main"
     ],
     extras_require={
@@ -60,14 +60,14 @@ setup(
             "jupyter==1.0.0",
             "ipywidgets==8.1.3",
         ],
-        "search": [
-            "faiss-cpu==1.9.0",
-        ],
+        # "search": [
+        #     "faiss-cpu==1.9.0",
+        # ],
     },
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    python_requires='>=3.11',
+    python_requires='>=3.10.13'
 )

@@ -16,23 +16,77 @@ from dreams.definitions import PRETRAINED
 from tqdm import tqdm
 
 
-def download_pretrained_model(model_name: str = 'embedding_model.ckpt', download_dir: Path = PRETRAINED):
-    target_path = download_dir / model_name
-    url = 'https://zenodo.org/records/10997887/files/' + model_name
+def hf_download(repo_id: str, file_pth: str, local_dir: T.Optional[T.Union[str, Path]] = None, repo_type: str = "dataset") -> str:
+    """
+    Download a file from the Hugging Face Hub and return its location on disk.
     
-    # Create the download directory if it doesn't exist
-    target_path.parent.mkdir(parents=True, exist_ok=True)
+    Args:
+        repo_id (str): Hugging Face repository ID.
+        file_pth (str): Name of the file to download.
+        local_dir (Optional[Union[str, Path]]): Local directory to download the file to.
+        repo_type (str): Type of the repository.
+    """
+    return hf_hub_download(
+        repo_id=repo_id,
+        filename=file_pth,
+        repo_type=repo_type,
+        local_dir=local_dir,
+        cache_dir=local_dir
+    )
 
-    def download_with_progress(url, target_path):
-        with tqdm(unit='B', unit_scale=True, unit_divisor=1024, miniters=1, desc=f"Downloading {url.split('/')[-1]}") as pbar:
-            def report_hook(count, block_size, total_size):
-                if total_size != -1:
-                    pbar.total = total_size
-                pbar.update(block_size)
-            urllib.request.urlretrieve(url, target_path, reporthook=report_hook)
+
+def download_pretrained_model(model_name: str = 'embedding_model.ckpt', download_dir: Path = PRETRAINED, verbose: bool = True):
+    """
+    Download a pre-trained model from the Hugging Face Hub and return its location on disk.
+    
+    Args:
+        model_name (str): Name of the model to download.
+        download_dir (Path): Local directory to download the model to.
+        verbose (bool): Whether to print verbose output.
+    """
+    # Old method of downloading from Zenodo
+    # target_path = download_dir / model_name
+    # url = 'https://zenodo.org/records/10997887/files/' + model_name
+    
+    # # Create the download directory if it doesn't exist
+    # target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # def download_with_progress(url, target_path):
+    #     with tqdm(unit='B', unit_scale=True, unit_divisor=1024, miniters=1, desc=f"Downloading {url.split('/')[-1]}") as pbar:
+    #         def report_hook(count, block_size, total_size):
+    #             if total_size != -1:
+    #                 pbar.total = total_size
+    #             pbar.update(block_size)
+    #         urllib.request.urlretrieve(url, target_path, reporthook=report_hook)
             
-    download_with_progress(url, target_path)
-    return target_path
+    # download_with_progress(url, target_path)
+    # return target_path
+
+    # New method of downloading from Hugging Face
+    if verbose:
+        print(f"Downloading {model_name} from Hugging Face to {download_dir}/{model_name}")
+    return hf_download(
+        repo_id="roman-bushuiev/DreaMS",
+        file_pth=model_name,
+        local_dir=download_dir,
+        repo_type="model"
+    )
+
+
+def gems_hf_download(file_pth: str, local_dir: T.Optional[T.Union[str, Path]] = None) -> str:
+    """
+    Download a GeMS file from the Hugging Face Hub and return its location on disk.
+    
+    Args:
+        file_pth (str): Name of the file to download.
+        local_dir (Optional[Union[str, Path]]): Local directory to download the file to.
+    """
+    return hf_download(
+        repo_id="roman-bushuiev/GeMS",
+        file_pth="data/" + file_pth,
+        local_dir=local_dir,
+        repo_type="dataset"
+    )
 
 
 def networkx_to_dataframe(G: nx.Graph) -> pd.DataFrame:
@@ -77,22 +131,6 @@ def networkx_to_dataframe(G: nx.Graph) -> pd.DataFrame:
     df = pd.DataFrame(data)
     
     return df
-
-
-def gems_hf_download(file_pth: str, local_dir: T.Optional[T.Union[str, Path]] = None) -> str:
-    """
-    Download a file from the Hugging Face Hub and return its location on disk.
-    
-    Args:
-        file_pth (str): Name of the file to download.
-    """
-    return hf_hub_download(
-        repo_id="roman-bushuiev/GeMS",
-        filename="data/" + file_pth,
-        repo_type="dataset",
-        local_dir=local_dir,
-        cache_dir=local_dir
-    )
 
 
 def is_float(s):
