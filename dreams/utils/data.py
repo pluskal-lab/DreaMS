@@ -403,6 +403,8 @@ class MSData:
         return pd.DataFrame(df)
     
     def to_mgf(self, out_pth: Union[Path, str]):
+        import unicodedata
+
         out_pth = Path(out_pth)
         if not out_pth.exists():
             out_pth.parent.mkdir(parents=True, exist_ok=True)
@@ -412,6 +414,12 @@ class MSData:
         for _, row in tqdm(df.iterrows(), total=len(df), desc='Converting to matchms before saving to mgf'):
             metadata = {k: v for k, v in row.items() if k != SPECTRUM and v is not None and not pd.isna(v)}
             metadata['PEPMASS'] = row[PRECURSOR_MZ]
+
+            # Sanitize metadata to ASCII (otherwise save_as_mgf fails on for example molecule names containing non-ASCII characters)
+            for k, v in metadata.items():
+                if isinstance(v, str):
+                    metadata[k] = unicodedata.normalize("NFKD", v).encode("ascii", "ignore").decode("ascii")
+
             spec = Spectrum(
                 mz=np.array(row[SPECTRUM][0]),
                 intensities=np.array(row[SPECTRUM][1]),
