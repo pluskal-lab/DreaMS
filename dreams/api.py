@@ -425,12 +425,12 @@ class DreaMSAtlas:
 
         print('Initializing DreaMS Atlas data structures...')
         self.lib = du.MSData(
-            local_dir / 'nist20_mona_clean_merged_spectra_dreams.hdf5',
-            # utils.gems_hf_download(
-            #     'DreaMS_Atlas/nist20_mona_clean_merged_spectra_dreams_hidden_nist20.hdf5',
-            #     local_dir=local_dir
-            # ),
-            # in_mem=False
+            utils.gems_hf_download(
+                'DreaMS_Atlas/nist20_mona_clean_merged_spectra_dreams_hidden_nist20.hdf5',
+                local_dir=local_dir
+            ),
+            in_mem=False
+            # local_dir / 'nist20_mona_clean_merged_spectra_dreams.hdf5',  # When NIST20 is not hidden
         )
         print(f'Loaded spectral library ({len(self.lib):,} spectra).')
 
@@ -441,14 +441,14 @@ class DreaMSAtlas:
         print(f'Loaded GeMS-C1 dataset ({len(self.gems):,} spectra).')
 
         self.csrknn = du.CSRKNN.from_npz(
-            # utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN.npz', local_dir=local_dir),
-            local_dir / 'DreaMS_Atlas_3NN_with_nist.npz'
+            utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN.npz', local_dir=local_dir),
+            # local_dir / 'DreaMS_Atlas_3NN_with_nist.npz'  # ge
         )
         print(f'Loaded DreaMS Atlas edges ({self.csrknn.n_nodes:,} nodes and {self.csrknn.n_edges:,} edges).')
 
         self.dreams_clusters = pd.read_csv(
-            # utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN_clusters.csv', local_dir=local_dir)
-            local_dir / 'DreaMS_Atlas_3NN_clusters_with_nist.csv'
+            utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN_clusters.csv', local_dir=local_dir)
+            # local_dir / 'DreaMS_Atlas_3NN_clusters_with_nist.csv'  # When NIST20 is not hidden
         )['clusters']
         print(f'Loaded DreaMS Atlas k-NN cluster representatives from GeMS-C1 ({self.dreams_clusters.nunique():,} representatives).')
 
@@ -507,7 +507,7 @@ class DreaMSAtlas:
         cluster = []
         for j in idx:
             data = self.gems_lsh.at(
-                j, plot_mol=False, plot_spec=False, return_spec=True, vals=vals
+                int(j), plot_mol=False, plot_spec=False, return_spec=True, vals=vals
             )
             if msv_metadata:
                 data = self._add_msv_metadata(data)
@@ -553,11 +553,11 @@ class DreaMSAtlas:
         for i in idx:
             if i < self.lib.num_spectra:
                 data[i] = self.lib.at(
-                    i, plot_mol=plot, plot_spec=plot, return_spec=return_spec
+                    int(i), plot_mol=plot, plot_spec=plot, return_spec=return_spec
                 )
             else:
                 data[i] = self.gems.at(
-                    i - self.lib.num_spectra, plot_mol=plot, plot_spec=plot, return_spec=return_spec
+                    int(i) - self.lib.num_spectra, plot_mol=plot, plot_spec=plot, return_spec=return_spec
                 )
     
             # NOTE: tmp fix for newly renamed datasets
