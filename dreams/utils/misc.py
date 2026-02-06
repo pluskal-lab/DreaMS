@@ -2,14 +2,13 @@ import pathlib
 import numpy as np
 import heapq
 import torch
-import os
-import urllib.request
+import h5py
 import typing as T
 import pandas as pd
 import networkx as nx
 import plotly.graph_objects as go
 from collections import Counter
-from typing import Sequence
+from typing import Sequence, Union
 from huggingface_hub import hf_hub_download
 from pathlib import Path
 from dreams.definitions import PRETRAINED
@@ -131,6 +130,128 @@ def networkx_to_dataframe(G: nx.Graph) -> pd.DataFrame:
     df = pd.DataFrame(data)
     
     return df
+
+
+def _ensure_tensor(x: Union[torch.Tensor, np.ndarray]) -> torch.Tensor:
+    """Convert numpy array to torch tensor; pass through tensors unchanged."""
+    if isinstance(x, np.ndarray):
+        return torch.from_numpy(x).float()
+    if isinstance(x, torch.Tensor):
+        return x
+    raise TypeError(f"Expected torch.Tensor or np.ndarray, got {type(x)}")
+
+
+def knn_search(
+    query: Union[torch.Tensor, np.ndarray, "h5py.Dataset", "dreams.utils.io.ChunkedDatasetAccessor"],
+    ref: Union[torch.Tensor, np.ndarray, "h5py.Dataset", "dreams.utils.io.ChunkedDatasetAccessor"],
+    topk: int = 1,
+    query_batch_size: int = 1024,
+    ref_batch_size: int = 10000,
+    verbose: bool = False,
+) -> T.Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Perform exact cosine similarity search on CPU or GPU using batched matrix multiplication.
+    Handles large reference databases that may not fit in memory by processing
+    reference in chunks. Supports in-memory arrays and on-disk HDF5 datasets for
+    both query and reference. Caller is responsible for opening HDF5 files and
+    passing the dataset, e.g. h5py.File(path, 'r')['DreaMS_embedding'].
+
+    Args:
+        query: Query embeddings of shape (n_query, d). torch.Tensor, np.ndarray,
+            or h5py.Dataset or ChunkedDatasetAccessor (on-disk, loaded in batches).
+        ref: Reference embeddings of shape (n_ref, d). torch.Tensor, np.ndarray,
+            or h5py.Dataset or ChunkedDatasetAccessor (on-disk, only necessary chunks are loaded).
+        topk: Number of top results to return for each query.
+        query_batch_size: Batch size for processing queries.
+        ref_batch_size: Batch size for processing reference chunks (to avoid memory OOM).
+        verbose: If True, show a tqdm progress bar over query batches.
+
+    Returns:
+        Tuple of (indices, similarities):
+        - indices: Tensor of shape (n_query, topk) with topk most similar reference indices.
+        - similarities: Tensor of shape (n_query, topk) with cosine similarity scores.
+    """
+    from dreams.utils.io import ChunkedDatasetAccessor
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Resolve query: in-memory array vs on-disk h5py.Dataset
+    query_tensor: T.Optional[torch.Tensor] = None
+    query_ds = None
+    if h5py is not None and (isinstance(query, h5py.Dataset) or isinstance(query, ChunkedDatasetAccessor)):
+        query_ds = query
+        n_query = query_ds.shape[0]
+    else:
+        query_tensor = _ensure_tensor(query).to(device)
+        query_tensor = torch.nn.functional.normalize(query_tensor, dim=1)
+        n_query = query_tensor.shape[0]
+
+    # Resolve reference: in-memory array vs on-disk h5py.Dataset
+    ref_cpu: T.Optional[torch.Tensor] = None
+    ref_ds = None
+    if h5py is not None and (isinstance(ref, h5py.Dataset) or isinstance(ref, ChunkedDatasetAccessor)):
+        ref_ds = ref
+        n_ref = ref_ds.shape[0]
+    else:
+        ref_cpu = _ensure_tensor(ref).cpu()
+        ref_cpu = torch.nn.functional.normalize(ref_cpu, dim=1)
+        n_ref = ref_cpu.shape[0]
+
+    # Process queries in batches
+    query_batch_size = min(query_batch_size, n_query)
+    all_topk_idx = []
+    all_topk_scores = []
+    query_batch_starts = range(0, n_query, query_batch_size)
+    if verbose:
+        query_batch_starts = tqdm(query_batch_starts, desc="k-NN query", unit="batch")
+    for i in query_batch_starts:
+        # Load query batch (from tensor or HDF5 slice)
+        end = min(i + query_batch_size, n_query)
+        if query_tensor is not None:
+            qbatch = query_tensor[i:end]
+        else:
+            chunk_np = np.asarray(query_ds[i:end])
+            qbatch = torch.from_numpy(chunk_np).float().to(device)
+            qbatch = torch.nn.functional.normalize(qbatch, dim=1)
+
+        # Initialize per-query top-k accumulators for this batch
+        topk_scores = torch.full(
+            (qbatch.shape[0], topk),
+            float("-inf"),
+            device=device,
+            dtype=qbatch.dtype,
+        )
+        topk_idx = torch.zeros((qbatch.shape[0], topk), device=device, dtype=torch.long)
+
+        # Scan reference in chunks and merge top-k
+        ref_chunk_starts = range(0, n_ref, ref_batch_size)
+        if verbose:
+            ref_chunk_starts = tqdm(ref_chunk_starts, desc="Searching reference chunk", unit="chunk", leave=False)
+        for ref_start in ref_chunk_starts:
+            ref_end = min(ref_start + ref_batch_size, n_ref)
+            # Load reference chunk (from tensor or HDF5 slice)
+            if ref_cpu is not None:
+                ref_chunk = ref_cpu[ref_start:ref_end].to(device)
+            else:
+                chunk_np = np.asarray(ref_ds[ref_start:ref_end])
+                ref_chunk = torch.from_numpy(chunk_np).float().to(device)
+                ref_chunk = torch.nn.functional.normalize(ref_chunk, dim=1)
+
+            # Cosine similarity (vectors already normalized) and merge with running top-k
+            sim = torch.mm(qbatch, ref_chunk.t())
+            chunk_topk = min(topk, ref_chunk.shape[0])
+            chunk_scores, chunk_idx = torch.topk(sim, k=chunk_topk, dim=1)
+            chunk_idx = chunk_idx + ref_start
+            combined_scores = torch.cat([topk_scores, chunk_scores], dim=1)
+            combined_idx = torch.cat([topk_idx, chunk_idx], dim=1)
+            topk_scores, topk_indices_in_combined = torch.topk(combined_scores, k=topk, dim=1)
+            topk_idx = torch.gather(combined_idx, 1, topk_indices_in_combined)
+
+        all_topk_idx.append(topk_idx)
+        all_topk_scores.append(topk_scores)
+
+    indices = torch.cat(all_topk_idx, dim=0)
+    similarities = torch.cat(all_topk_scores, dim=0)
+    return indices, similarities
 
 
 def is_float(s):
