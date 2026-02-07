@@ -1427,15 +1427,27 @@ class ChunkedHDF5File:
 
     def close(self):
         """Close all files."""
-        try:
-            for f in self.files:
+        files = getattr(self, 'files', None)
+        if files is None:
+            return
+        self.files = None  # Avoid double-close and use-after-close during __del__
+        for f in files:
+            if f is None:
+                continue
+            try:
                 f.close()
-        except Exception as e:
-            print(f'Ignored error while closing chunked HDF5 files: {e}')
+            except Exception as e:
+                # Known h5py teardown quirk: unary ~ on None during interpreter shutdown
+                if 'unary ~' not in str(e) or 'NoneType' not in str(e):
+                    print(f'Ignored error while closing chunked HDF5 files: {e}')
+                continue
 
     def __del__(self):
         """Ensure all files are properly closed when the object is deleted."""
-        self.close()
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def __getitem__(self, key):
         """
