@@ -27,7 +27,7 @@ setup(
     install_requires=[
         "numpy==1.25.0",
         "numba==0.58.0",
-        "torch==2.2.1",
+        #"torch==2.2.1",
         "pytorch-lightning==2.0.8",
         "torchmetrics==1.3.2",
         "pandas==2.2.1",

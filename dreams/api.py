@@ -425,12 +425,12 @@ class DreaMSAtlas:
 
         print('Initializing DreaMS Atlas data structures...')
         self.lib = du.MSData(
-            local_dir / 'nist20_mona_clean_merged_spectra_dreams.hdf5',
-            # utils.gems_hf_download(
-            #     'DreaMS_Atlas/nist20_mona_clean_merged_spectra_dreams_hidden_nist20.hdf5',
-            #     local_dir=local_dir
-            # ),
-            # in_mem=False
+            utils.gems_hf_download(
+                'DreaMS_Atlas/nist20_mona_clean_merged_spectra_dreams_hidden_nist20.hdf5',
+                local_dir=local_dir
+            ),
+            in_mem=False
+            # local_dir / 'nist20_mona_clean_merged_spectra_dreams.hdf5',  # When NIST20 is not hidden
         )
         print(f'Loaded spectral library ({len(self.lib):,} spectra).')
 
@@ -441,14 +441,14 @@ class DreaMSAtlas:
         print(f'Loaded GeMS-C1 dataset ({len(self.gems):,} spectra).')
 
         self.csrknn = du.CSRKNN.from_npz(
-            # utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN.npz', local_dir=local_dir),
-            local_dir / 'DreaMS_Atlas_3NN_with_nist.npz'
+            utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN.npz', local_dir=local_dir),
+            # local_dir / 'DreaMS_Atlas_3NN_with_nist.npz'  # ge
         )
         print(f'Loaded DreaMS Atlas edges ({self.csrknn.n_nodes:,} nodes and {self.csrknn.n_edges:,} edges).')
 
         self.dreams_clusters = pd.read_csv(
-            # utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN_clusters.csv', local_dir=local_dir)
-            local_dir / 'DreaMS_Atlas_3NN_clusters_with_nist.csv'
+            utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN_clusters.csv', local_dir=local_dir)
+            # local_dir / 'DreaMS_Atlas_3NN_clusters_with_nist.csv'  # When NIST20 is not hidden
         )['clusters']
         print(f'Loaded DreaMS Atlas k-NN cluster representatives from GeMS-C1 ({self.dreams_clusters.nunique():,} representatives).')
 
@@ -507,7 +507,7 @@ class DreaMSAtlas:
         cluster = []
         for j in idx:
             data = self.gems_lsh.at(
-                j, plot_mol=False, plot_spec=False, return_spec=True, vals=vals
+                int(j), plot_mol=False, plot_spec=False, return_spec=True, vals=vals
             )
             if msv_metadata:
                 data = self._add_msv_metadata(data)
@@ -553,11 +553,11 @@ class DreaMSAtlas:
         for i in idx:
             if i < self.lib.num_spectra:
                 data[i] = self.lib.at(
-                    i, plot_mol=plot, plot_spec=plot, return_spec=return_spec
+                    int(i), plot_mol=plot, plot_spec=plot, return_spec=return_spec
                 )
             else:
                 data[i] = self.gems.at(
-                    i - self.lib.num_spectra, plot_mol=plot, plot_spec=plot, return_spec=return_spec
+                    int(i) - self.lib.num_spectra, plot_mol=plot, plot_spec=plot, return_spec=return_spec
                 )
     
             # NOTE: tmp fix for newly renamed datasets
@@ -572,6 +572,53 @@ class DreaMSAtlas:
                 data[i] = self._subset_data(data[i], vals)
 
         return data
+
+    def search(
+        self,
+        query_spectra: T.Union[Path, str, du.MSData],
+        k: int = 10,
+        dreams_sim_thld: float = -np.inf,
+        in_mem: bool = False,
+        out_path: T.Optional[T.Union[Path, str]] = None
+    ):
+        """
+        Search for top-k neighbors in the DreaMS Atlas.
+
+        Args:
+            query_spectra: Path to the query spectra file or MSData object.
+            k: Number of neighbors to search for.
+            dreams_sim_thld: Similarity threshold for the DreaMS embeddings similarity scores.
+            in_mem: Whether to load the reference spectra into memory. If True, will require
+                around 300 GB of RAM, if False, doesnt require excessive RAM but it will be
+                orders of magnitude slower.
+            out_path: Path to save the search results to a .tsv file.
+        """
+        # Search for top-k neighbors
+        dreams_search = DreaMSSearch(ref_spectra=self.gems, in_mem=in_mem, verbose=True)
+        df = dreams_search.query(query_spectra, k=k, dreams_sim_thld=dreams_sim_thld)
+
+        # Get atlas data: dict per row mapping ref_index -> {attr: val, ...}
+        atlas_data = df['ref_index'].apply(
+            lambda i: self.get_data(i, msv_metadata=True, return_spec=False, plot=False)
+        )
+
+        # Extract the inner attr dict per row and add each attribute as a new column
+        atlas_dicts = atlas_data.apply(lambda d: next(iter(d.values())) if d else {})
+        all_keys = set()
+        for d in atlas_dicts:
+            all_keys.update(d.keys())
+        for key in sorted(all_keys):
+            if key not in [RT, PRECURSOR_MZ, DREAMS_EMBEDDING, CHARGE]:  # Already added in dreams_search.query
+                df['ref_' + key] = atlas_dicts.apply(lambda d, k=key: d.get(k))
+
+        # Save results to file
+        if out_path is not None:
+            df[SPECTRUM] = df[SPECTRUM].apply(lambda x: su.unpad_peak_list(x).tolist())
+            df[f'ref_{SPECTRUM}'] = df[f'ref_{SPECTRUM}'].apply(lambda x: su.unpad_peak_list(x).tolist())
+            df.to_csv(out_path, index=False, sep='\t')
+            print(f'Saved search results to {out_path}')
+
+        return df
 
     def is_library_i(self, i):
         return i < self.lib.num_spectra
@@ -656,55 +703,21 @@ class DreaMSSearch:
     def __init__(
         self,
         ref_spectra: T.Union[Path, str, du.MSData],
-        verbose: bool = True,
-        store_embs: bool = True
+        in_mem: bool = True,
+        verbose: bool = True
     ):
+        self.in_mem = in_mem
         self.verbose = verbose
-        self.store_embs = store_embs
         if not isinstance(ref_spectra, du.MSData):
-            ref_spectra = du.MSData.load(ref_spectra, in_mem=True, mode='a' if self.store_embs else 'r')
+            ref_spectra = du.MSData.load(ref_spectra, in_mem=in_mem, mode='a')
         self.ref_spectra = ref_spectra
-        if DREAMS_EMBEDDING in self.ref_spectra.columns():
-            self.embs_ref = self.ref_spectra[DREAMS_EMBEDDING]
-        else:
-            self.embs_ref = dreams_embeddings(self.ref_spectra, store_embs=self.store_embs)
-        self.embs_ref = self.embs_ref.astype('float32', copy=False)
-        if self.embs_ref.ndim == 1:
-            self.embs_ref = self.embs_ref[np.newaxis, :]
-        if self.verbose:
-            print(f'Prepared reference embeddings (num spectra: {len(self.ref_spectra):,})...')
-
-    def _batched_torch_knn(self, query: np.ndarray, k: int, batch_size: int = 1024):
-        """We have this because faiss seems to often hang and hard to install and sklearn is slow"""
-
-        # Prepare embeddings
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        emb_ref = torch.from_numpy(self.embs_ref).to(device)  # We keep from_numpy because embs can be loaded from disk
-        emb_ref = torch.nn.functional.normalize(emb_ref, dim=1)
-        query = torch.from_numpy(query).to(device)
-        query = torch.nn.functional.normalize(query, dim=1)
-
-        # Search for neighbors
-        batch_size = min(batch_size, query.shape[0])
-        all_topk_scores, all_topk_idx = [], []
-        with tqdm(total=len(query), desc='Searching for similar spectra', disable=not self.verbose) as pbar:
-            for i in range(0, len(query), batch_size):
-                qbatch = query[i:i+batch_size]  # (b, d)
-                sim = torch.mm(qbatch, emb_ref.t())  # (b, n_ref)
-                topk_scores, topk_idx = torch.topk(sim, k=k, dim=1)
-                all_topk_scores.append(topk_scores)
-                all_topk_idx.append(topk_idx)
-                pbar.update(qbatch.shape[0])
-
-        # Concatenate results
-        scores = torch.cat(all_topk_scores, dim=0).cpu().numpy()
-        idx = torch.cat(all_topk_idx, dim=0).cpu().numpy()
-        return idx, scores  # faiss-like API    
+        if DREAMS_EMBEDDING not in self.ref_spectra.columns():
+            dreams_embeddings(self.ref_spectra, store_embs=True)
 
     def query(
         self,
         query_spectra: T.Union[Path, str, du.MSData],
-        out_path: T.Optional[Path] = None,
+        out_path: T.Optional[T.Union[Path, str]] = None,
         k: int = 10,
         dreams_sim_thld: float = -np.inf,
         out_all_metadata: bool = True,
@@ -724,23 +737,29 @@ class DreaMSSearch:
 
         # Compute embeddings for query spectra
         if not isinstance(query_spectra, du.MSData):
-            query_spectra = du.MSData.load(query_spectra, in_mem=True, mode='a' if self.store_embs else 'r')
-        if DREAMS_EMBEDDING in query_spectra.columns(): 
-            embs = query_spectra[DREAMS_EMBEDDING]
-        else:
-            embs = dreams_embeddings(query_spectra, store_embs=self.store_embs)
-        embs = embs.astype('float32', copy=False)
-        if embs.ndim == 1:
-            embs = embs[np.newaxis, :]
+            query_spectra = du.MSData.load(query_spectra, in_mem=True, mode='a')
+        
+        if DREAMS_EMBEDDING not in query_spectra.columns():
+            dreams_embeddings(query_spectra, store_embs=True)
 
         # Search for top-k neighbors
         if self.verbose:
             print(f'Searching for top-{k} neighbors...')
-        idx, similarities = self._batched_torch_knn(embs, k, batch_size=batch_size)
+        query_embs = query_spectra[DREAMS_EMBEDDING] if self.in_mem else query_spectra.data[DREAMS_EMBEDDING]
+        ref_embs = self.ref_spectra[DREAMS_EMBEDDING] if self.in_mem else self.ref_spectra.data[DREAMS_EMBEDDING]
+        indices, similarities = utils.knn_search(
+            query_embs,
+            ref_embs,
+            topk=k,
+            query_batch_size=batch_size,
+            verbose=self.verbose
+        )
+        idx = indices.cpu().numpy()
+        similarities = similarities.cpu().numpy()
 
         # Build DataFrame with results
         df = []
-        for i in range(len(embs)):
+        for i in range(len(idx)):
             for k, j in enumerate(idx[i]):
                 if similarities[i][k] > dreams_sim_thld:
                     row = {}
@@ -769,8 +788,8 @@ class DreaMSSearch:
                     
                     # Add DreaMS embeddings for query and reference spectra
                     if out_embs:
-                        row[DREAMS_EMBEDDING] = embs[i].tolist()
-                        row[f'ref_{DREAMS_EMBEDDING}'] = self.embs_ref[j].tolist()
+                        row[DREAMS_EMBEDDING] = query_spectra.get_values(DREAMS_EMBEDDING, i).tolist()
+                        row[f'ref_{DREAMS_EMBEDDING}'] = self.ref_spectra.get_values(DREAMS_EMBEDDING, j).tolist()
 
                     # Add DreaMS similarity, top-k index, and query/reference index
                     row.update({
