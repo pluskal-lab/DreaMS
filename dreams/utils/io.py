@@ -414,7 +414,7 @@ def read_textual_ms_format(
             if k in [PRECURSOR_MZ, RT] and isinstance(v, str):
                 v = v.split(' ')[0]
                 if not utils.is_float(v):
-                    raise ValueError(f'Invalid value for {k}: {v}')
+                    raise ValueError(f'Invalid value for {k}: "{v}"')
                 v = float(v)
             
             # Parse ionization mode
@@ -424,8 +424,8 @@ def read_textual_ms_format(
                     v = '+'
                 elif 'neg' in v:
                     v = '-'
-                else:
-                    raise ValueError(f'Invalid value for {k}: {v}')
+                # else:
+                #     raise ValueError(f'Invalid value for {k}: "{v}"')
 
             # Parse charge
             if k == CHARGE:
@@ -437,7 +437,7 @@ def read_textual_ms_format(
                         v = sign * int(v.replace('-', '').replace('+', ''))
                         v = int(v)
                 except ValueError:
-                    raise ValueError(f'Invalid value for {k}: {v}')
+                    raise ValueError(f'Invalid value for {k}: "{v}"')
 
             spec[k] = v
             continue
