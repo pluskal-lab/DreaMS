@@ -174,27 +174,30 @@ def knn_search(
     from dreams.utils.io import ChunkedDatasetAccessor
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Resolve query: in-memory array vs on-disk h5py.Dataset
+    def _is_in_memory(x):
+        return isinstance(x, (torch.Tensor, np.ndarray))
+
+    # Resolve query: in-memory array vs on-disk / lazy dataset
     query_tensor: T.Optional[torch.Tensor] = None
     query_ds = None
-    if h5py is not None and (isinstance(query, h5py.Dataset) or isinstance(query, ChunkedDatasetAccessor)):
-        query_ds = query
-        n_query = query_ds.shape[0]
-    else:
+    if _is_in_memory(query):
         query_tensor = _ensure_tensor(query).to(device)
         query_tensor = torch.nn.functional.normalize(query_tensor, dim=1)
         n_query = query_tensor.shape[0]
+    else:
+        query_ds = query
+        n_query = query_ds.shape[0]
 
-    # Resolve reference: in-memory array vs on-disk h5py.Dataset
+    # Resolve reference: in-memory array vs on-disk / lazy dataset
     ref_cpu: T.Optional[torch.Tensor] = None
     ref_ds = None
-    if h5py is not None and (isinstance(ref, h5py.Dataset) or isinstance(ref, ChunkedDatasetAccessor)):
-        ref_ds = ref
-        n_ref = ref_ds.shape[0]
-    else:
+    if _is_in_memory(ref):
         ref_cpu = _ensure_tensor(ref).cpu()
         ref_cpu = torch.nn.functional.normalize(ref_cpu, dim=1)
         n_ref = ref_cpu.shape[0]
+    else:
+        ref_ds = ref
+        n_ref = ref_ds.shape[0]
 
     # Process queries in batches
     query_batch_size = min(query_batch_size, n_query)
