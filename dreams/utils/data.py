@@ -678,6 +678,258 @@ class MSData:
         return f'MSData(pth={self.hdf5_pth}, in_mem={self.in_mem}) with {len(self):,} spectra.'
 
 
+class _ConcatColumnAccessor:
+    """Lazy accessor for a single column spread across multiple MSData objects.
+
+    Supports ``.shape`` and ``__getitem__`` (int / slice) so that downstream
+    consumers like ``knn_search`` can iterate in chunks without loading the
+    entire column into memory.
+    """
+
+    def __init__(self, datasets: list, col: str):
+        self._datasets = datasets
+        self._col = col
+        self._lengths = [len(ds) for ds in datasets]
+        self._offsets = np.cumsum([0] + self._lengths[:-1]).tolist()
+        self._total = sum(self._lengths)
+        per_item_shape = datasets[0].data[col].shape[1:]
+        self.shape = (self._total, *per_item_shape)
+
+    def _resolve(self, idx):
+        for i, (off, ln) in enumerate(zip(self._offsets, self._lengths)):
+            if idx < off + ln:
+                return i, int(idx - off)
+        raise IndexError(f"Index {idx} out of bounds for length {self._total}")
+
+    def __getitem__(self, index):
+        if isinstance(index, (int, np.integer)):
+            if index < 0:
+                index += self._total
+            ds_i, local_i = self._resolve(index)
+            return self._datasets[ds_i].data[self._col][local_i]
+        if isinstance(index, slice):
+            start, stop, step = index.indices(self._total)
+            if step != 1:
+                raise ValueError("Only step=1 slices are supported.")
+            return self._get_slice(start, stop)
+        raise TypeError(f"Invalid index type: {type(index)}")
+
+    def _get_slice(self, start, stop):
+        if start >= stop:
+            return np.empty((0, *self.shape[1:]))
+        parts = []
+        for i, (off, ln) in enumerate(zip(self._offsets, self._lengths)):
+            local_start = max(start - off, 0)
+            local_end = min(stop - off, ln)
+            if local_start < local_end:
+                parts.append(np.asarray(
+                    self._datasets[i].data[self._col][local_start:local_end]
+                ))
+        return np.concatenate(parts)
+
+
+class _ConcatDataProxy:
+    """Dict-like lazy proxy for column access across concatenated MSData objects.
+
+    Used as ``self.data`` when ``in_mem=False``.  Returns
+    ``_ConcatColumnAccessor`` instances for base columns so that large
+    datasets are never fully materialised in memory.
+    """
+
+    def __init__(self, concat_msdata: 'ConcatMSData'):
+        self._parent = concat_msdata
+
+    def keys(self):
+        return list(self._parent._base_columns) + list(self._parent._extra_columns.keys())
+
+    def __contains__(self, key):
+        return key in self._parent._base_columns or key in self._parent._extra_columns
+
+    def __getitem__(self, col):
+        if col in self._parent._extra_columns:
+            return self._parent._extra_columns[col]
+        if col not in self._parent._base_columns:
+            raise KeyError(f"Column '{col}' not found.")
+        return _ConcatColumnAccessor(self._parent.datasets, col)
+
+
+class ConcatMSData(MSData):
+    """Wrapper presenting multiple MSData objects as a single concatenated dataset
+    over the intersection of their columns.
+
+    Subclasses MSData so that existing ``isinstance`` checks (e.g. in
+    ``DreaMSSearch``) recognise it without modification.  The parent
+    ``__init__`` is intentionally skipped — all state is set up here.
+
+    Args:
+        datasets: List of MSData objects to concatenate.
+        in_mem: Whether to eagerly load and concatenate all columns into
+            memory.  ``None`` (default) inherits from the underlying datasets.
+    """
+
+    def __init__(self, datasets: List[MSData], in_mem: Optional[bool] = None):
+        if not datasets:
+            raise ValueError("At least one MSData object is required.")
+        self.datasets = list(datasets)
+        self._lengths = [len(ds) for ds in self.datasets]
+        self._offsets = np.cumsum([0] + self._lengths[:-1]).tolist()
+        self.num_spectra = sum(self._lengths)
+
+        self._base_columns = sorted(
+            set.intersection(*(set(ds.columns()) for ds in self.datasets))
+        )
+        self._extra_columns: dict = {}
+
+        if in_mem is None:
+            self.in_mem = all(ds.in_mem for ds in self.datasets)
+        else:
+            self.in_mem = in_mem
+
+        self.mode = 'a'
+
+        if self.in_mem:
+            print(f'Loading concatenated dataset into memory '
+                  f'({self.num_spectra:,} spectra from {len(self.datasets)} datasets)...')
+            self.data = {}
+            for col in self._base_columns:
+                parts = [ds.get_values(col) for ds in self.datasets]
+                if isinstance(parts[0], list):
+                    merged = []
+                    for p in parts:
+                        merged.extend(p)
+                    self.data[col] = merged
+                else:
+                    self.data[col] = np.concatenate(parts)
+        else:
+            self.data = _ConcatDataProxy(self)
+
+    # ------------------------------------------------------------------
+    # Index helpers
+    # ------------------------------------------------------------------
+
+    def _resolve_index(self, idx):
+        """Map global index to (dataset_index, local_index)."""
+        for i, (offset, length) in enumerate(zip(self._offsets, self._lengths)):
+            if idx < offset + length:
+                return i, int(idx - offset)
+        raise IndexError(f"Index {idx} out of bounds for {self.num_spectra} spectra.")
+
+    # ------------------------------------------------------------------
+    # Column / value access
+    # ------------------------------------------------------------------
+
+    def columns(self):
+        if self.in_mem:
+            return list(self.data.keys())
+        return list(self._base_columns) + list(self._extra_columns.keys())
+
+    def get_values(self, col, idx=None, decode_strings=True):
+        # --- in-memory path: self.data is a plain dict (same layout as MSData) ---
+        if self.in_mem:
+            col_data = self.data[col]
+            val = col_data[idx] if idx is not None else col_data[:]
+            if decode_strings and isinstance(val, bytes):
+                val = val.decode('utf-8')
+            elif decode_strings and hasattr(val, 'dtype') and val.dtype == object:
+                val = [s.decode('utf-8') if isinstance(s, bytes) else s for s in val]
+            return val
+
+        # --- lazy path (in_mem=False) ---
+
+        if col in self._extra_columns:
+            arr = self._extra_columns[col]
+            if idx is not None:
+                val = arr[idx]
+                if decode_strings and isinstance(val, bytes):
+                    val = val.decode('utf-8')
+                return val
+            return arr[:]
+
+        if col not in self._base_columns:
+            raise KeyError(f"Column '{col}' not found in ConcatMSData.")
+
+        if idx is not None and isinstance(idx, (int, np.integer)):
+            ds_i, local_i = self._resolve_index(idx)
+            return self.datasets[ds_i].get_values(col, local_i, decode_strings)
+
+        parts = [ds.get_values(col, decode_strings=decode_strings) for ds in self.datasets]
+        if isinstance(parts[0], list):
+            result = []
+            for p in parts:
+                result.extend(p)
+            return result
+        return np.concatenate(parts)
+
+    def get_spectra(self, idx=None):
+        return self.get_values(SPECTRUM, idx)
+
+    def get_prec_mzs(self, idx=None):
+        return self.get_values(PRECURSOR_MZ, idx)
+
+    def get_adducts(self, idx=None):
+        return self.get_values(ADDUCT, idx)
+
+    def get_charges(self, idx=None):
+        return self.get_values(CHARGE, idx)
+
+    def get_smiles(self, idx=None):
+        return self.get_values(SMILES, idx)
+
+    # ------------------------------------------------------------------
+    # Column mutation (in-memory only)
+    # ------------------------------------------------------------------
+
+    def add_column(self, name, data, remove_old_if_exists=False):
+        if name in self.columns():
+            if remove_old_if_exists:
+                self.remove_column(name)
+            else:
+                raise ValueError(f'Column "{name}" already exists.')
+        if self.in_mem:
+            self.data[name] = data
+        else:
+            self._extra_columns[name] = data
+
+    def remove_column(self, name):
+        if self.in_mem:
+            if name in self.data and name not in self._base_columns:
+                del self.data[name]
+            else:
+                raise ValueError(f"Cannot remove column '{name}' from ConcatMSData "
+                                 f"(only dynamically added columns can be removed).")
+        else:
+            if name in self._extra_columns:
+                del self._extra_columns[name]
+            else:
+                raise ValueError(f"Cannot remove column '{name}' from ConcatMSData "
+                                 f"(only dynamically added columns can be removed).")
+
+    # ------------------------------------------------------------------
+    # Conversions
+    # ------------------------------------------------------------------
+
+    def to_torch_dataset(self, spec_preproc: SpectrumPreprocessor, label=None, **kwargs):
+        if label is not None:
+            raise NotImplementedError("ConcatMSData does not support labeled datasets.")
+        return RawSpectraDataset(self.get_spectra(), self.get_prec_mzs(), spec_preproc, **kwargs)
+
+    # ------------------------------------------------------------------
+    # Dunder methods
+    # ------------------------------------------------------------------
+
+    def __len__(self):
+        return self.num_spectra
+
+    def __getitem__(self, col):
+        return self.get_values(col)
+
+    def __del__(self):
+        pass
+
+    def __repr__(self):
+        return f'ConcatMSData({len(self.datasets)} datasets, {len(self):,} total spectra)'
+
+
 def subset_lsh(
         in_pth: Union[Path, str],
         out_pth: Optional[Path] = None,
