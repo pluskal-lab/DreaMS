@@ -153,6 +153,20 @@ class DataFormatC(DataFormat):
     high_intensity_thld = 0.1
 
 
+class DataFormatAll(DataFormat):
+    min_file_spectra = 1
+    max_ms_level = 100
+    min_peaks_n = 1
+    max_peaks_n = 128
+    min_charge = -100
+    max_charge = 100
+    min_intensity_ampl = 0.
+    max_tbxic_stdev = 1e6
+    max_prec_mz = 1e6
+    max_mz = 1e6
+    high_intensity_thld = 0.
+
+
 class DataFormatBuilder:
     def __init__(self, dformat_name):
         if dformat_name == 'A':
@@ -161,6 +175,8 @@ class DataFormatBuilder:
             self.dformat = DataFormatB()
         elif dformat_name == 'C':
             self.dformat = DataFormatC()
+        elif dformat_name == 'ALL':
+            self.dformat = DataFormatAll()
         elif dformat_name == 'A1':
             self.dformat = DataFormatA1()
         elif dformat_name == 'A2':
@@ -179,7 +195,7 @@ def assign_dformat(spec: np.ndarray, prec_mz: float, **kwargs) -> str:
         dformat = DataFormatBuilder(e).get_dformat()
         if dformat.val_spec(spec, prec_mz, **kwargs):
             return e
-    return '-'
+    return 'ALL'
 
 
 ### Legacy code
