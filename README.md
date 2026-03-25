@@ -5,7 +5,7 @@
 
 <p>
   <a href="https://doi.org/10.1038/s41587-025-02663-3"><img src="https://img.shields.io/badge/Paper-Nat Biotechnology-EFD600.svg" height="22px"></a>
-   <a href="https://huggingface.co/spaces/anton-bushuiev/DreaMS"><img src="https://img.shields.io/badge/Web app-DreaMS-green.svg" height="22px"></a>
+  <a href="https://huggingface.co/spaces/anton-bushuiev/DreaMS"><img src="https://img.shields.io/badge/Web app-DreaMS-green.svg" height="22px"></a>
   <!-- <a href="https://chemrxiv.org/engage/chemrxiv/article-details/6626775021291e5d1d61967f"><img src="https://img.shields.io/badge/ChemRxiv-10.26434-brown.svg" height="22px"></a> -->
   <a href='https://dreams-docs.readthedocs.io/en/latest/?badge=latest'><img src='https://readthedocs.org/projects/dreams-docs/badge/?version=latest' height="22px"></a>
   <a href="https://zenodo.org/records/10997887"><img src="https://img.shields.io/badge/Model weights-10997887-blue.svg" height="22px"></a>
@@ -13,6 +13,7 @@
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-b31b1b.svg" height="22px"></a>
   <a href="https://huggingface.co/datasets/roman-bushuiev/GeMS/tree/main/data"> <img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/dataset-on-hf-md-dark.svg" height="22px"></a>
   <a href="https://huggingface.co/roman-bushuiev/DreaMS"> <img src="https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-md-dark.svg" height="22px"></a>
+  <a href="https://drive.google.com/file/d/1ZUGsci4UCq-92fBgONKt6D_Nxo1uFw1-/view?usp=sharing"><img src="https://colab.research.google.com/assets/colab-badge.svg" height="22px" alt="Open In Colab"></a>
 <p>
 
 <p align="center">
@@ -41,6 +42,16 @@ A simple web app is available on [Hugging Face Spaces](https://huggingface.co/sp
 matching for your MS/MS spectra based on DreaMS embedding similarity in one click.
 
 ![screenshot_gradio](assets/screenshot_gradio.png)
+
+## Google Colab tutorial: DreaMS beer profiler 🍻
+
+<a href="https://drive.google.com/file/d/1ZUGsci4UCq-92fBgONKt6D_Nxo1uFw1-/view?usp=sharing"><img src="https://colab.research.google.com/assets/colab-badge.svg" height="22px" alt="Open In Colab"></a>
+
+It is also possible to run DreaMS remotely in Google Colab, as demonstrated in the [tutorial](https://drive.google.com/file/d/1ZUGsci4UCq-92fBgONKt6D_Nxo1uFw1-/view?usp=sharing) for the DreaMS-based chemical profiling of beer samples. This tutorial shows how to:
+
+1. Extract and preprocess MS/MS spectra from LC-MS/MS experiments.
+2. Compare beers by analyzing molecular embeddings (MS/MS spectrum embeddings).
+3. Build a taxonomic tree of beers by analyzing experiment-level embeddings (LC-MS/MS experiment embeddings).
 
 ## Getting started locally
 
