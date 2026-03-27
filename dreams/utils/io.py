@@ -568,6 +568,7 @@ def read_mzml(
     scan_range: Optional[Tuple[int, int]] = None,
     store_extra: bool = False,
     assign_dformats: bool = True,
+    only_format: Optional[str] = None,
     log_path: Optional[Union[Path, str]] = None,
     logger=None,
 ):
@@ -589,7 +590,10 @@ def read_mzml(
             MSn-only output of the former lcmsms_to_hdf5 pipeline, returned as a flat
             DataFrame with no HDF5 group hierarchy.
         assign_dformats: When store_extra=True, assign data format labels
-            ('A', 'B', 'C', or '-') per spectrum. Defaults to True.
+            ('A', 'B', 'C', or 'ALL') per spectrum. Defaults to True.
+        only_format: If set (e.g. 'A', 'B', 'C'), keep only spectra whose
+            ``dformat`` column matches this value. Requires store_extra=True
+            and assign_dformats=True.
         log_path: Path to a log file (only used when store_extra=True). Derived
             automatically from output_path or pth if not given.
         logger: Optional pre-configured logger. If provided, used as-is and log_path
@@ -799,7 +803,115 @@ def read_mzml(
     elif verbose and problems:
         print(f'Spectra problems in {pth.name}: {dict(problems)}')
 
+    # Filter by data format if requested
+    if only_format and 'dformat' in df.columns and len(df) > 0:
+        df = df[df['dformat'] == only_format].reset_index(drop=True)
+
+    if df.empty:
+        logger.warning(f'No MSn spectra collected from {pth.name}, not storing .hdf5 file.')
+        return None
+    # Write flat HDF5 file (only in store_extra mode; without store_extra the
+    # caller — e.g. MSData.from_mzml — handles HDF5 writing via from_pandas)
+    if store_extra and output_path is not None and len(df) > 0:
+        _write_flat_hdf5(
+            output_path=str(output_path),
+            df=df,
+            n_highest_peaks=n_highest_peaks,
+            file_props=file_props if store_extra else None,
+            store_extra=store_extra,
+            logger=logger,
+        )
+
     return df
+
+
+def _write_flat_hdf5(
+    output_path: str,
+    df: pd.DataFrame,
+    n_highest_peaks: int = 128,
+    file_props: Optional[dict] = None,
+    store_extra: bool = False,
+    compress_peaks_lvl: int = 3,
+    compress_full_lvl: int = 3,
+    logger=None,
+):
+    """Write a DataFrame of spectra to a flat .hdf5 file.
+
+    Flat layout with all datasets at root level.  Uses a combined ``spectrum``
+    dataset (N, 2, peaks) and dataset names / dtypes matching
+    ``parsed_lcmsms_to_hdf``.
+
+    Args:
+        output_path: Path for the output .hdf5 file.
+        df: DataFrame produced by ``read_mzml``.
+        n_highest_peaks: Trim/pad peak lists to this width.
+        file_props: If provided, saved as HDF5 root-level attributes.
+        store_extra: Whether the DataFrame contains extra metadata columns.
+        compress_peaks_lvl: gzip compression level for peak-list datasets.
+        compress_full_lvl: gzip compression level for metadata datasets.
+        logger: Optional logger.
+    """
+    # Process peak lists: trim/pad to n_highest_peaks
+    peak_lists = df[SPECTRUM].values
+    peaks_n = np.array([pl.shape[1] for pl in peak_lists])
+    max_peaks_n = int(peaks_n.max())
+    if n_highest_peaks and max_peaks_n > n_highest_peaks:
+        if logger:
+            logger.info(f'Trimming peaks to {n_highest_peaks} (max was {max_peaks_n}, '
+                        f'mean was {peaks_n.mean():.1f}, median was {np.median(peaks_n):.1f}).')
+        max_peaks_n = n_highest_peaks
+        peak_lists = np.array([su.trim_peak_list(pl, max_peaks_n) for pl in peak_lists])
+    peak_lists = np.stack([su.pad_peak_list(pl, max_peaks_n) for pl in peak_lists])
+
+    with h5py.File(output_path, 'w') as hdf_file:
+        # Save file_props as HDF5 attributes
+        if file_props is not None:
+            for k, v in file_props.items():
+                hdf_file.attrs[k] = v if v is not None else -1
+
+        # Peak lists — combined (N, 2, peaks) spectrum dataset
+        hdf_file.create_dataset(SPECTRUM, data=peak_lists, compression='gzip',
+                                compression_opts=compress_peaks_lvl)
+
+        # Metadata — dtypes and compression match parsed_lcmsms_to_hdf
+        hdf_file.create_dataset(FILE_NAME, data=[df[FILE_NAME].iloc[0]] * len(df),
+                                dtype=h5py.string_dtype(), compression=compress_full_lvl)
+        hdf_file.create_dataset(PRECURSOR_MZ, data=df[PRECURSOR_MZ].values, dtype='f4',
+                                compression=compress_full_lvl)
+        hdf_file.create_dataset('precursor_target_mz', data=df['precursor_target_mz'].values, dtype='f4',
+                                compression=compress_full_lvl)
+        hdf_file.create_dataset(RT, data=df[RT].values, dtype='f4', compression=compress_full_lvl)
+        hdf_file.create_dataset(CHARGE, data=df[CHARGE].values, dtype='i1', compression=compress_full_lvl)
+        hdf_file.create_dataset(SCAN_NUMBER, data=df[SCAN_NUMBER].values, dtype='i4',
+                                compression=compress_full_lvl)
+        hdf_file.create_dataset('MS level', data=df['ms_level'].values, dtype='i1',
+                                compression=compress_full_lvl)
+        hdf_file.create_dataset('positive polarity', data=df['polarity'].values, dtype='i1',
+                                compression=compress_full_lvl)
+        hdf_file.create_dataset('window lo', data=df['window_lo'].values, dtype='f4',
+                                compression=compress_full_lvl)
+        hdf_file.create_dataset('window uo', data=df['window_uo'].values, dtype='f4',
+                                compression=compress_full_lvl)
+
+        if store_extra:
+            hdf_file.create_dataset('ion injection time', data=df['ion_injection_time'].values, dtype='f4',
+                                    compression=compress_full_lvl)
+            hdf_file.create_dataset('type', data=df['spectrum_type'].values, dtype='i1',
+                                    compression=compress_full_lvl)
+            hdf_file.create_dataset('def str', data=df['filter_str'].values.astype(str),
+                                    dtype=h5py.string_dtype('utf-8', None), compression=compress_full_lvl)
+            hdf_file.create_dataset('energy', data=df['energy'].values, dtype='f4',
+                                    compression=compress_full_lvl)
+            hdf_file.create_dataset('precursor intensity', data=df['precursor_intensity'].values, dtype='f4',
+                                    compression=compress_full_lvl)
+            hdf_file.create_dataset('precursor target intensity', data=df['precursor_target_intensity'].values,
+                                    dtype='f4', compression=compress_full_lvl)
+            if 'dformat' in df.columns:
+                hdf_file.create_dataset('dformat', data=df['dformat'].values.astype(str), dtype='S1',
+                                        compression=compress_full_lvl)
+
+    if logger:
+        logger.info(f'Saved {len(df)} spectra to {output_path}')
 
 
 def lcmsms_to_hdf5(
@@ -1310,8 +1422,9 @@ def merge_lcmsms_hdf5s(
         compression_level: int = 6
     ):
     """
-    Merge flat .hdf5 files (produced by read_mzml with store_extra=True) into a
-    single output file.
+    Merge .hdf5 files into a single output file.  Accepts both flat files
+    (produced by ``read_mzml`` with ``store_extra=True``) and old grouped files
+    (produced by ``lcmsms_to_hdf5``).
 
     Args:
         in_pths: Directory or iterable of .hdf5 files.
@@ -1339,22 +1452,35 @@ def merge_lcmsms_hdf5s(
         try:
             with h5py.File(in_pth, 'a') as f_in:
 
-                if SPECTRUM not in f_in:
-                    continue
+                # Detect format: old grouped (lcmsms_to_hdf5) vs flat (read_mzml)
+                is_old_format = 'MSn data' in f_in
 
-                n_spectra = f_in[SPECTRUM].shape[0]
+                if is_old_format:
+                    container = f_in['MSn data']
+                    if 'mzs' not in container:
+                        continue
+                    spectra = np.stack([container['mzs'][:], container['intensities'][:]], axis=1)
+                    skip_keys = {'mzs', 'intensities', 'precursor id', FILE_NAME}
+                else:
+                    container = f_in
+                    if SPECTRUM not in container:
+                        continue
+                    spectra = container[SPECTRUM][:]
+                    skip_keys = {SPECTRUM, FILE_NAME}
+
+                n_spectra = spectra.shape[0]
                 if n_spectra < dformat_filters.min_file_spectra:
                     continue
 
                 # Assign dformat if not already present
-                if 'dformat' not in f_in:
+                if 'dformat' not in container:
+                    prec_mzs = container[PRECURSOR_MZ][:] if PRECURSOR_MZ in container else np.zeros(n_spectra)
                     dformat_array = np.empty(n_spectra, dtype=h5py.string_dtype())
-                    prec_mzs = f_in[PRECURSOR_MZ][:] if PRECURSOR_MZ in f_in else np.zeros(n_spectra)
                     for i in range(n_spectra):
-                        dformat_array[i] = dformats.assign_dformat(f_in[SPECTRUM][i], prec_mz=prec_mzs[i])
-                    f_in.create_dataset('dformat', data=dformat_array)
+                        dformat_array[i] = dformats.assign_dformat(spectra[i], prec_mz=prec_mzs[i])
+                    container.create_dataset('dformat', data=dformat_array)
 
-                spectra = f_in[SPECTRUM][:]
+                # Trim/pad spectra to target size
                 if spectra.shape[2] > dformat_filters.max_peaks_n:
                     spectra = su.trim_peak_list(spectra, dformat_filters.max_peaks_n)
                 elif spectra.shape[2] < dformat_filters.max_peaks_n:
@@ -1364,17 +1490,9 @@ def merge_lcmsms_hdf5s(
                     (SPECTRUM, spectra, spectra.dtype),
                     (FILE_NAME, [in_pth.stem] * n_spectra, h5py.string_dtype())
                 ]
-                exclude = {SPECTRUM, FILE_NAME}
-                all_keys = [k for k in f_in.keys() if k not in exclude]
-                # datasets.extend(
-                #     [(n, f_in[n][:], f_in[n].dtype) for n in all_keys]
-                # )
-                for n in all_keys:
-                    ds = f_in[n]
-                    print(f'  key={n!r:30s}  dtype={ds.dtype}  shape={ds.shape}')
-                    datasets.append((n, ds[:], ds.dtype))
-
-                #TODO: replace back once find error
+                for name in container.keys():
+                    if name not in skip_keys and isinstance(container[name], h5py.Dataset):
+                        datasets.append((name, container[name][:], container[name].dtype))
 
                 for name, data, dtype in datasets:
                     create_kwargs = dict(
@@ -1394,6 +1512,8 @@ def merge_lcmsms_hdf5s(
                         )
                     else:
                         data_len = data.shape[0] if isinstance(data, np.ndarray) else len(data)
+                        if name not in f_out:
+                            continue
                         f_out[name].resize(f_out[name].shape[0] + data_len, axis=0)
                         f_out[name][-data_len:] = data
 

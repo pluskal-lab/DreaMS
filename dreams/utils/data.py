@@ -334,7 +334,7 @@ class MSData:
     @staticmethod
     def from_mzml(
         pth: Union[Path, str],
-        output_pth: Union[Path, str],
+        output_pth: Union[Path, str] = None,
         scan_range: Optional[Tuple[int, int]] = None,
         verbose_parser: bool = False,
         store_extra: bool = False,
@@ -347,10 +347,7 @@ class MSData:
             log_path = log_path or str(output_pth.with_suffix('.log'))
             logger = io.setup_logger(log_path, log_name=pth.stem)
         df = io.read_mzml(pth, output_path=output_pth, scan_range=scan_range, verbose=verbose_parser, store_extra=store_extra, logger=logger)
-        if df.empty:
-            logger.warning(f'No MSn spectra collected from {pth.name}, not storing .hdf5 file.')
-            return None
-        
+
         hdf5_pth = output_pth
         if output_pth is None:
             hdf5_pth = pth.with_suffix('.hdf5')
