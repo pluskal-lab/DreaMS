@@ -160,6 +160,22 @@ def bytes_to_units(size_bytes, unit='MB'):
     return size_bytes / 1024 ** power
 
 
+def verify_hdf5_integrity(path: Union[str, Path]) -> bool:
+    """
+    Checks if an HDF5 file exists and can be opened/read without errors.
+    This detects corrupted headers or truncated files.
+    """
+    path = Path(path)
+    if not path.is_file() or path.stat().st_size == 0:
+        return False
+    try:
+        with h5py.File(path, 'r') as f:
+            _ = f.keys()
+            return True
+    except Exception:
+        return False
+
+
 def merge_ms_hdfs(in_hdf_pths, out_pth, group='MSn data', max_peaks_n=512, del_in=False, show_tqdm=True, logger=None,
                   add_file_name_dataset=True, mzs_dataset='mzs', intensities_dataset='intensities'):
     """
@@ -1036,7 +1052,8 @@ def read_lcmsms(
 
     # If order of spectra is invalid or insufficient do not continue the processing
     if order_of_spectra in [lcms.MSLevelsOrder.INVALID, lcms.MSLevelsOrder.EMPTY,
-                            lcms.MSLevelsOrder.SINGLE_MS1, lcms.MSLevelsOrder.UNIFORM_MS1]:
+                            lcms.MSLevelsOrder.SINGLE_MS1, lcms.MSLevelsOrder.UNIFORM_MS1,
+                            lcms.MSLevelsOrder.MISSING_MS1]:
         logger.info(f'Not processing the file because of {order_of_spectra}')
         #write_to_hdf(args, file_props=file_props, df_msn_data=None, prec_spectra_data=None, logger=logger)
         return None, None, None
@@ -1413,7 +1430,8 @@ def downloadpublicdata_to_hdf5s(downloads_log: Path, del_in=True, verbose=False)
 def merge_lcmsms_hdf5s(
         in_pths: Union[Path, Iterable[Path]],
         out_pth: Path,
-        dformat: str = 'A',
+        dformat: str = 'ALL',
+        store_acc_est: bool = True,
         verbose: bool = True,
         compression: Optional[str] = 'gzip',
         compression_level: int = 6
@@ -1423,11 +1441,14 @@ def merge_lcmsms_hdf5s(
     (produced by ``read_mzml`` with ``store_extra=True``) and old grouped files
     (produced by ``lcmsms_to_hdf5``).
 
+    Uses a two-pass approach: first validates all inputs and collects union keys,
+    then merges with proper handling of heterogeneous datasets.
+
     Args:
         in_pths: Directory or iterable of .hdf5 files.
         out_pth: Output .hdf5 file.
-        dformat: Data format label used to determine peak list size limits and
-            minimum spectra per file ('A', 'B', or 'C').
+        dformat: Data format for filtering (default 'ALL' for permissive).
+        store_acc_est: Whether to store instrument accuracy estimate.
         verbose: Verbose output.
         compression: Compression method for HDF5 datasets (e.g. 'gzip', None).
         compression_level: Compression level (0–9) when using gzip.
@@ -1435,17 +1456,94 @@ def merge_lcmsms_hdf5s(
 
     os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
 
-    if not isinstance(in_pths, Path):
-        in_pths = Path(in_pths)
+    out_pth = Path(out_pth)
+    out_pth_resolved = out_pth.resolve()
 
-    if in_pths.is_dir():
-        in_pths = in_pths.glob('*.hdf5')
+    if isinstance(in_pths, (str, Path)):
+        in_pths = Path(in_pths)
+        if in_pths.is_dir():
+            candidates = sorted(in_pths.glob('*.hdf5'))
+        else:
+            candidates = [in_pths]
+    else:
+        candidates = sorted(Path(p) for p in in_pths)
+
+    candidates = [p for p in candidates if p.resolve() != out_pth_resolved]
 
     dformat_filters = dformats.DataFormatBuilder(dformat).get_dformat()
 
-    f_out = h5py.File(out_pth, 'w')
-    first_file = True
-    for in_pth in tqdm(list(in_pths), desc='Merging .hdf5 files', disable=not verbose):
+    excluded_msn_keys = {
+        'mzs', 'intensities', 'ion injection time', 'precursor id', 'def str'
+    }
+    metadata_fields = [
+        '#TBXICs', '#TBXICs(1)', 'MSLevelOrder', 'Ordered RT',
+        'TBXICs mean stdev', 'TBXICs median stdev', 'instrument name', 'name'
+    ]
+
+    def _normalize_attr(val):
+        if isinstance(val, bytes):
+            return val.decode('utf-8', errors='replace')
+        if isinstance(val, np.ndarray):
+            if val.shape == ():
+                val = val.item()
+            else:
+                return val
+        if isinstance(val, np.generic):
+            return val.item()
+        return val
+
+    def _coerce_metadata_value(field, value):
+        if value is None:
+            if field == 'Ordered RT':
+                return False
+            if field in {'#TBXICs', '#TBXICs(1)'}:
+                return -1
+            if field in {'TBXICs mean stdev', 'TBXICs median stdev'}:
+                return np.nan
+            return ''
+
+        value = _normalize_attr(value)
+        if field == 'Ordered RT':
+            return bool(value)
+        if field in {'#TBXICs', '#TBXICs(1)'}:
+            try:
+                return int(value)
+            except Exception:
+                return -1
+        if field in {'TBXICs mean stdev', 'TBXICs median stdev'}:
+            try:
+                return float(value)
+            except Exception:
+                return np.nan
+        return str(value)
+
+    def _fill_array(shape, dtype):
+        dtype = np.dtype(dtype)
+        str_info = h5py.check_string_dtype(dtype)
+        if str_info is not None:
+            return np.full(shape, '', dtype=dtype)
+        if dtype.kind in {'S', 'U'}:
+            fill = b'' if dtype.kind == 'S' else ''
+            return np.full(shape, fill, dtype=dtype)
+        if dtype.kind == 'b':
+            return np.zeros(shape, dtype=dtype)
+        if dtype.kind in {'i', 'u'}:
+            return np.full(shape, -1, dtype=dtype)
+        if dtype.kind == 'f':
+            return np.full(shape, np.nan, dtype=dtype)
+        return np.zeros(shape, dtype=dtype)
+
+    # Pass 1: Validate inputs and collect union keys
+    valid_inputs = []
+    union_keys = set()
+    key_specs = {}
+
+    for in_pth in candidates:
+        if not verify_hdf5_integrity(in_pth):
+            if verbose:
+                print(f'Skipping corrupted/invalid input file: {in_pth}')
+            continue
+
         try:
             with h5py.File(in_pth, 'a') as f_in:
 
@@ -1455,68 +1553,168 @@ def merge_lcmsms_hdf5s(
                 if is_old_format:
                     container = f_in['MSn data']
                     if 'mzs' not in container:
+                        if verbose:
+                            print(f'Skipping {in_pth} because required peak datasets are missing.')
                         continue
-                    spectra = np.stack([container['mzs'][:], container['intensities'][:]], axis=1)
-                    skip_keys = {'mzs', 'intensities', 'precursor id', FILE_NAME}
+                    n_spectra = container['mzs'].shape[0]
+                    skip_keys = excluded_msn_keys
                 else:
                     container = f_in
                     if SPECTRUM not in container:
+                        if verbose:
+                            print(f'Skipping {in_pth} because required peak datasets are missing.')
                         continue
-                    spectra = container[SPECTRUM][:]
-                    skip_keys = {SPECTRUM, FILE_NAME}
+                    n_spectra = container[SPECTRUM].shape[0]
+                    skip_keys = {SPECTRUM, FILE_NAME, 'ion injection time', 'def str'}
 
-                n_spectra = spectra.shape[0]
                 if n_spectra < dformat_filters.min_file_spectra:
                     continue
 
                 # Assign dformat if not already present
                 if 'dformat' not in container:
                     prec_mzs = container[PRECURSOR_MZ][:] if PRECURSOR_MZ in container else np.zeros(n_spectra)
-                    dformat_array = np.empty(n_spectra, dtype=h5py.string_dtype())
+                    if is_old_format:
+                        spectra = np.stack([container['mzs'][:], container['intensities'][:]], axis=1)
+                    else:
+                        spectra = container[SPECTRUM][:]
+                    dformat_array = np.empty(n_spectra, dtype=h5py.string_dtype('utf-8'))
                     for i in range(n_spectra):
                         dformat_array[i] = dformats.assign_dformat(spectra[i], prec_mz=prec_mzs[i])
                     container.create_dataset('dformat', data=dformat_array)
+                mergeable_keys = sorted(k for k in container.keys() if k not in skip_keys)
+                for k in mergeable_keys:
+                    if k not in key_specs:
+                        ds = container[k]
+                        key_specs[k] = {'dtype': ds.dtype, 'tail_shape': ds.shape[1:]}
+                union_keys.update(mergeable_keys)
 
-                # Trim/pad spectra to target size
+                metadata = {
+                    field: _coerce_metadata_value(field, f_in.attrs.get(field))
+                    for field in metadata_fields
+                }
+                valid_inputs.append({
+                    'path': Path(in_pth),
+                    'n_spectra': n_spectra,
+                    'metadata': metadata,
+                })
+        except Exception as e:
+            if verbose:
+                print(f'Skipping {in_pth} because of error: {e}')
+    if not valid_inputs:
+        raise ValueError('No valid input .hdf5 files were found for merging.')
+
+    union_keys = sorted(union_keys)
+
+    metadata_buffers = {field: [] for field in metadata_fields}
+    metadata_buffers['file_name'] = []
+
+    def _dataset_create_kwargs(dtype):
+        return {
+            'dtype': dtype,
+            'compression': compression,
+            'compression_opts': compression_level if compression == 'gzip' else None,
+        }
+
+    def _append_dataset(f_out, name, data, dtype):
+        data = np.asarray(data)
+        if name not in f_out:
+            f_out.create_dataset(
+                name,
+                data=data,
+                shape=data.shape,
+                maxshape=(None, *data.shape[1:]),
+                **_dataset_create_kwargs(dtype),
+            )
+        else:
+            f_out[name].resize(f_out[name].shape[0] + data.shape[0], axis=0)
+            f_out[name][-data.shape[0]:] = data
+
+    # Pass 2: Merge validated inputs
+    with h5py.File(out_pth, 'w') as f_out:
+        for file_id, entry in enumerate(
+            tqdm(valid_inputs, desc='Merging .hdf5 files', disable=not verbose)
+        ):
+            in_pth = entry['path']
+            n_spectra = entry['n_spectra']
+
+            with h5py.File(in_pth, 'r') as f_in:
+                is_old_format = 'MSn data' in f_in
+                if is_old_format:
+                    container = f_in['MSn data']
+                    spectra = np.stack([container['mzs'][:], container['intensities'][:]], axis=1)
+                    
+                else: 
+                    container = f_in
+                    spectra = container[SPECTRUM][:]
                 if spectra.shape[2] > dformat_filters.max_peaks_n:
                     spectra = su.trim_peak_list(spectra, dformat_filters.max_peaks_n)
                 elif spectra.shape[2] < dformat_filters.max_peaks_n:
                     spectra = su.pad_peak_list(spectra, dformat_filters.max_peaks_n)
 
-                datasets = [
-                    (SPECTRUM, spectra, spectra.dtype),
-                    (FILE_NAME, [in_pth.stem] * n_spectra, h5py.string_dtype())
-                ]
-                for name in container.keys():
-                    if name not in skip_keys and isinstance(container[name], h5py.Dataset):
-                        datasets.append((name, container[name][:], container[name].dtype))
+                _append_dataset(f_out, SPECTRUM, spectra, spectra.dtype)
+                _append_dataset(
+                    f_out, FILE_NAME,
+                    np.full(n_spectra, in_pth.stem, dtype=h5py.string_dtype('utf-8')),
+                    h5py.string_dtype('utf-8'),
+                )
+                _append_dataset(
+                    f_out, 'file_id',
+                    np.full(n_spectra, file_id, dtype=np.int32),
+                    np.int32,
+                )
 
-                for name, data, dtype in datasets:
-                    create_kwargs = dict(
-                        dtype=dtype,
-                        compression=compression,
-                        compression_opts=compression_level
-                        if compression == 'gzip' else None
+                for key in union_keys:
+                    if key in container:
+                        data = container[key][:]
+                    else:
+                        spec = key_specs[key]
+                        data = _fill_array((n_spectra, *spec['tail_shape']), spec['dtype'])
+                    _append_dataset(f_out, key, data, key_specs[key]['dtype'])
+
+                if store_acc_est:
+                    acc_est = _coerce_metadata_value(
+                        'TBXICs median stdev', f_in.attrs.get('TBXICs median stdev')
+                    )
+                    _append_dataset(
+                        f_out, 'instrument accuracy est.',
+                        np.full(n_spectra, acc_est, dtype=np.float32),
+                        np.float32,
                     )
 
-                    if first_file:
-                        f_out.create_dataset(
-                            name,
-                            data=data,
-                            shape=data.shape if isinstance(data, np.ndarray) else (len(data),),
-                            maxshape=(None, *data.shape[1:]) if isinstance(data, np.ndarray) else (None,),
-                            **create_kwargs
-                        )
-                    else:
-                        data_len = data.shape[0] if isinstance(data, np.ndarray) else len(data)
-                        if name not in f_out:
-                            continue
-                        f_out[name].resize(f_out[name].shape[0] + data_len, axis=0)
-                        f_out[name][-data_len:] = data
+            for field in metadata_fields:
+                metadata_buffers[field].append(entry['metadata'][field])
+            metadata_buffers['file_name'].append(in_pth.stem)
 
-                first_file = False
-        except Exception as e:
-            print(f'Skipping {in_pth} because of error: {e}')
+        # Write per-file metadata group
+        metadata_group = f_out.create_group('metadata')
+        metadata_types = {
+            '#TBXICs': np.int64,
+            '#TBXICs(1)': np.int64,
+            'MSLevelOrder': h5py.string_dtype('utf-8'),
+            'Ordered RT': np.bool_,
+            'TBXICs mean stdev': np.float64,
+            'TBXICs median stdev': np.float64,
+            'instrument name': h5py.string_dtype('utf-8'),
+            'name': h5py.string_dtype('utf-8'),
+            'file_name': h5py.string_dtype('utf-8'),
+        }
+        for field, dtype in metadata_types.items():
+            metadata_group.create_dataset(
+                field,
+                data=np.asarray(metadata_buffers[field], dtype=dtype),
+                dtype=dtype,
+                compression=compression,
+                compression_opts=compression_level if compression == 'gzip' else None,
+            )
+
+        # Verify output integrity
+        lengths = {}
+        for name, obj in f_out.items():
+            if isinstance(obj, h5py.Group):
+                continue
+            lengths[name] = obj.shape[0]
+        if len(set(lengths.values())) != 1:
+            raise ValueError(f'Merged dataset length mismatch detected: {lengths}')
 
 
 def lsh_subset(in_pth, dformat, n_hplanes=None, bin_size=1, max_specs_per_lsh=None, seed=333):

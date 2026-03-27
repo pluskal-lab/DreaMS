@@ -1,3 +1,4 @@
+from threading import local
 import warnings
 warnings.filterwarnings(
     "ignore",
@@ -413,7 +414,7 @@ def dreams_attn_scores(
 
 
 class DreaMSAtlas:
-    def __init__(self, local_dir: T.Optional[T.Union[str, Path]] = None):
+    def __init__(self, local_dir: T.Optional[T.Union[str, Path]] = None, nist20: bool = False):
         """
         Initialize a DreaMSAtlas object enabling access to the DreaMS Atlas k-NN graph and associated data for
         individual nodes in the graph.
@@ -424,14 +425,22 @@ class DreaMSAtlas:
         """
 
         print('Initializing DreaMS Atlas data structures...')
-        self.lib = du.MSData(
-            utils.gems_hf_download(
+        if local_dir is not None:
+            local_dir = Path(local_dir)
+        self.nist20 = nist20
+        if self.nist20:
+            lib_pth = local_dir / 'nist20_mona_clean_merged_spectra_dreams.hdf5'
+            if not lib_pth.exists():
+                raise FileNotFoundError(
+                    f"The file '{lib_pth}' does not exist. To access the NIST20 files, please provide a valid NIST20 "
+                     "license and request the files from the authors at roman.bushuiev@uochb.cas.cz."
+                )
+        else:
+            lib_pth = utils.gems_hf_download(
                 'DreaMS_Atlas/nist20_mona_clean_merged_spectra_dreams_hidden_nist20.hdf5',
                 local_dir=local_dir
-            ),
-            in_mem=False
-            # local_dir / 'nist20_mona_clean_merged_spectra_dreams.hdf5',  # When NIST20 is not hidden
-        )
+            )
+        self.lib = du.MSData(lib_pth, in_mem=False)
         print(f'Loaded spectral library ({len(self.lib):,} spectra).')
 
         self.gems = du.MSData.from_hdf5_chunks(
@@ -440,16 +449,28 @@ class DreaMSAtlas:
         )
         print(f'Loaded GeMS-C1 dataset ({len(self.gems):,} spectra).')
 
-        self.csrknn = du.CSRKNN.from_npz(
-            utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN.npz', local_dir=local_dir),
-            # local_dir / 'DreaMS_Atlas_3NN_with_nist.npz'  # ge
-        )
+        if self.nist20:
+            knn_pth = local_dir / 'DreaMS_Atlas_3NN_with_nist.npz'
+            if not knn_pth.exists():
+                raise FileNotFoundError(
+                    f"The file '{knn_pth}' does not exist. To access the NIST20 files, please provide a valid NIST20 "
+                     "license and request the files from the authors at roman.bushuiev@uochb.cas.cz."
+                )
+        else:
+            knn_pth = utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN.npz', local_dir=local_dir)
+        self.csrknn = du.CSRKNN.from_npz(knn_pth)
         print(f'Loaded DreaMS Atlas edges ({self.csrknn.n_nodes:,} nodes and {self.csrknn.n_edges:,} edges).')
 
-        self.dreams_clusters = pd.read_csv(
-            utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN_clusters.csv', local_dir=local_dir)
-            # local_dir / 'DreaMS_Atlas_3NN_clusters_with_nist.csv'  # When NIST20 is not hidden
-        )['clusters']
+        if self.nist20:
+            dreams_clusters_pth = local_dir / 'DreaMS_Atlas_3NN_clusters_with_nist.csv'
+            if not dreams_clusters_pth.exists():
+                raise FileNotFoundError(
+                    f"The file '{dreams_clusters_pth}' does not exist. To access the NIST20 files, please provide a valid NIST20 "
+                     "license and request the files from the authors at roman.bushuiev@uochb.cas.cz."
+                )
+        else:
+            dreams_clusters_pth = utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN_clusters.csv', local_dir=local_dir)
+        self.dreams_clusters = pd.read_csv(dreams_clusters_pth)['clusters']
         print(f'Loaded DreaMS Atlas k-NN cluster representatives from GeMS-C1 ({self.dreams_clusters.nunique():,} representatives).')
 
         self.gems_lsh = du.MSData.from_hdf5_chunks(
@@ -469,11 +490,13 @@ class DreaMSAtlas:
         ]]
         self.msv_metadata = self.msv_metadata.rename(columns={c: 'msv_' + c for c in self.msv_metadata.columns})
 
-        # self.knn_i_to_repr = np.unique(self.dreams_clusters)  # When NIST20 is not hidden
-        self.knn_i_to_repr = np.load(
-            utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN_knn_i_to_repr.npz', local_dir=local_dir)
-        )['knn_i_to_repr']
-        print(f'Loaded mapping from k-NN indices to node representatives (corresponding to {len(self.knn_i_to_repr):,} nodes).')
+        if self.nist20:
+            self.knn_i_to_repr = np.unique(self.dreams_clusters)  # When NIST20 is not hidden
+        else:
+            self.knn_i_to_repr = np.load(
+                utils.gems_hf_download(f'DreaMS_Atlas/DreaMS_Atlas_3NN_knn_i_to_repr.npz', local_dir=local_dir)
+            )['knn_i_to_repr']
+            print(f'Loaded mapping from k-NN indices to node representatives (corresponding to {len(self.knn_i_to_repr):,} nodes).')
         self.repr_to_knn_i = dict(zip(
             self.knn_i_to_repr,
             list(range(len(self.dreams_clusters)))
@@ -593,8 +616,9 @@ class DreaMSAtlas:
                 orders of magnitude slower.
             out_path: Path to save the search results to a .tsv file.
         """
-        # Search for top-k neighbors
-        dreams_search = DreaMSSearch(ref_spectra=self.gems, in_mem=in_mem, verbose=True)
+        # Search for top-k neighbors in both the spectral library and GeMS
+        ref_spectra = du.ConcatMSData([self.lib, self.gems], in_mem=in_mem)
+        dreams_search = DreaMSSearch(ref_spectra=ref_spectra, in_mem=in_mem, verbose=True)
         df = dreams_search.query(query_spectra, k=k, dreams_sim_thld=dreams_sim_thld)
 
         # Get atlas data: dict per row mapping ref_index -> {attr: val, ...}
@@ -692,8 +716,10 @@ class DreaMSAtlas:
         return self.knn_i_to_repr[knn_i]
     
     def get_lib_idx(self):
-        # return np.array(range(self.lib.num_spectra))  # When NIST20 is not hidden
-        return np.where(self.lib[PRECURSOR_MZ] != -1)[0]  # -1 values are hidden NIST20 spectra
+        if self.nist20:
+            return np.array(range(self.lib.num_spectra))  # When NIST20 is not hidden
+        else:
+            return np.where(self.lib[PRECURSOR_MZ] != -1)[0]  # -1 values are hidden NIST20 spectra
     
     def __len__(self):
         return self.lib.num_spectra + self.gems.num_spectra

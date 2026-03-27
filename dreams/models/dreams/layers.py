@@ -188,6 +188,7 @@ class TransformerEncoder(nn.Module):
         self.residual_dropout = args.residual_dropout
         self.n_layers = args.n_layers
         self.pre_norm = args.pre_norm
+        self._gradient_checkpointing = False
 
         self.atts = nn.ModuleList([MultiheadAttention(args) for _ in range(self.n_layers)])
         self.ffs = nn.ModuleList([FeedForward(args) for _ in range(self.n_layers)])
@@ -198,28 +199,40 @@ class TransformerEncoder(nn.Module):
         else:
             self.scales = nn.ModuleList([nn.LayerNorm(args.d_model) for _ in range(num_scales)])
 
-    def forward(self, src_inputs, src_mask, graphormer_dists=None):
+    def gradient_checkpointing_enable(self):
+        self._gradient_checkpointing = True
+
+    def _layer_forward(self, i, x, src_mask, graphormer_dists):
         pre_norm = self.pre_norm
         post_norm = not pre_norm
+        att = self.atts[i]
+        ff = self.ffs[i]
+        att_scale = self.scales[2 * i]
+        ff_scale = self.scales[2 * i + 1]
 
+        residual = x
+        x = att_scale(x) if pre_norm else x
+        x, _ = att(q=x, k=x, v=x, mask=src_mask, graphormer_dists=graphormer_dists)
+        x = residual + F.dropout(x, p=self.residual_dropout, training=self.training)
+        x = att_scale(x) if post_norm else x
+
+        residual = x
+        x = ff_scale(x) if pre_norm else x
+        x = ff(x)
+        x = residual + F.dropout(x, p=self.residual_dropout, training=self.training)
+        x = ff_scale(x) if post_norm else x
+        return x
+
+    def forward(self, src_inputs, src_mask, graphormer_dists=None):
         x = F.dropout(src_inputs, p=self.residual_dropout, training=self.training)
         for i in range(self.n_layers):
-            att = self.atts[i]
-            ff = self.ffs[i]
-            att_scale = self.scales[2 * i]
-            ff_scale = self.scales[2 * i + 1]
+            if self._gradient_checkpointing and self.training:
+                x = torch.utils.checkpoint.checkpoint(
+                    self._layer_forward, i, x, src_mask, graphormer_dists,
+                    use_reentrant=False
+                )
+            else:
+                x = self._layer_forward(i, x, src_mask, graphormer_dists)
 
-            residual = x
-            x = att_scale(x) if pre_norm else x
-            x, _ = att(q=x, k=x, v=x, mask=src_mask, graphormer_dists=graphormer_dists)
-            x = residual + F.dropout(x, p=self.residual_dropout, training=self.training)
-            x = att_scale(x) if post_norm else x
-
-            residual = x
-            x = ff_scale(x) if pre_norm else x
-            x = ff(x)
-            x = residual + F.dropout(x, p=self.residual_dropout, training=self.training)
-            x = ff_scale(x) if post_norm else x
-
-        x = self.scales[-1](x) if pre_norm else x
+        x = self.scales[-1](x) if self.pre_norm else x
         return x

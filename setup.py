@@ -27,7 +27,7 @@ setup(
     install_requires=[
         "numpy==1.25.0",
         "numba==0.58.0",
-        #"torch==2.2.1",
+        "torch==2.2.1",
         "pytorch-lightning==2.0.8",
         "torchmetrics==1.3.2",
         "pandas==2.2.1",
@@ -46,6 +46,7 @@ setup(
         "molplotly==1.1.7",
         "fire==0.6.0",
         "huggingface_hub==0.33.5",
+        "setuptools==81.0.0",
         "msml @ git+https://github.com/roman-bushuiev/msml_legacy_architectures.git@main"
     ],
     extras_require={
