@@ -481,48 +481,228 @@ def read_mgf(pth, **kwargs):
         **kwargs
     )
 
+# START - helper functions for read_mzml
 
-def read_mzml(pth: Union[Path, str], verbose: bool = False, scan_range: Optional[Tuple[int, int]] = None):
+def _load_experiment(pth: Path, logger) -> Optional[pyms.MSExperiment]:
+    """Load an mzML/mzXML file into an MSExperiment; return None on failure."""
+    exp = pyms.MSExperiment()
+    loader_cls = {'.mzml': pyms.MzMLFile, '.mzxml': pyms.MzXMLFile}.get(pth.suffix.lower())
+    if loader_cls is None:
+        raise ValueError(f'Unsupported file extension: {pth.suffix}.')
+    try:
+        loader_cls().load(str(pth), exp)
+    except Exception:
+        if logger:
+            logger.error('\nPARSING ERROR\n' + traceback.format_exc() + '\nPARSING ERROR')
+            logger.info('INPUT FILE')
+            with open(pth, 'r') as f:
+                for line in f:
+                    logger.info(line)
+            logger.info('INPUT FILE')
+        return None
+    return exp
 
+def _validate_store_extra(exp: pyms.MSExperiment, logger) -> Tuple[Optional[dict], Optional[dict]]:
+    """
+    Run file-level checks required for store_extra mode.
+
+    Returns (file_props, instrument_props) on success,
+    or (None, None) if the file should be skipped.
+    """
+    file_props = {'name': os.path.basename(str(logger.name))}  # logger.name == pth.stem
+    lcms.remove_electromagnetic_spectra(exp)
+
+    file_props['Ordered RT'] = lcms.sorted_by_rt(exp)
+    if not file_props['Ordered RT']:
+        lcms.sort_by_rt(exp)
+
+    order = lcms.get_order_of_spectra(exp)
+    file_props['MSLevelOrder'] = order.name
+    skip_orders = {
+        lcms.MSLevelsOrder.INVALID, lcms.MSLevelsOrder.EMPTY,
+        lcms.MSLevelsOrder.SINGLE_MS1, lcms.MSLevelsOrder.UNIFORM_MS1,
+    }
+    if order in skip_orders:
+        logger.info(f'Not processing the file because of {order}')
+        return None, None
+
+    instrument_props = lcms.get_instrument_props(exp)
+    file_props.update(instrument_props)
+    return file_props, instrument_props
+
+def _lookup_precursor_intensity(
+    prev_spectra_map: dict,
+    mslevel: int,
+    prec_mz: float,
+    target_mz: float,
+) -> Tuple[float, float]:
+    """Return (precursor_intensity, precursor_target_intensity) from the preceding MS1."""
+    entry = prev_spectra_map.get(mslevel - 1)
+    if entry is None or entry[0] is None:
+        return -1.0, -1.0
+
+    mzs, ints = entry[0]
+
+    def nearest_intensity(mz: float) -> float:
+        idx = np.searchsorted(mzs, mz)
+        # searchsorted returns insertion point — check both neighbours
+        if idx == 0:
+            return float(ints[0])
+        if idx == len(mzs):
+            return float(ints[-1])
+        # pick whichever neighbour is closer
+        if (mz - mzs[idx - 1]) <= (mzs[idx] - mz):
+            return float(ints[idx - 1])
+        return float(ints[idx])
+
+    return nearest_intensity(prec_mz), nearest_intensity(target_mz)
+
+
+
+def read_mzml(
+    pth: Union[Path, str],
+    output_path: Optional[Union[Path, str]] = None,
+    n_highest_peaks: int = 128,
+    verbose: bool = False,
+    scan_range: Optional[Tuple[int, int]] = None,
+    store_extra: bool = False,
+    assign_dformats: bool = True,
+    log_path: Optional[Union[Path, str]] = None,
+    logger=None,
+):
+    """
+    Read MS2 spectra from an .mzML or .mzXML file into a DataFrame, and optionally
+    save them to a flat .hdf5 file.
+
+    Args:
+        pth: Path to the .mzML or .mzXML file.
+        output_path: If provided, saves the result as a flat .hdf5 file to this path.
+        n_highest_peaks: Number of peaks to retain per spectrum when saving to .hdf5
+            (spectra are trimmed/padded). Defaults to 128.
+        verbose: Log individual scan errors and extra per-file statistics.
+        scan_range: Optional (min, max) scan number range to restrict loading.
+        store_extra: If True, collect additional per-spectrum metadata (ion injection
+            time, polarity as int, spectrum type, filter string, activation energy,
+            precursor intensities, dformat) and apply file-level checks (RT ordering,
+            spectrum order validation, TBXICs instrument accuracy). Equivalent to the
+            MSn-only output of the former lcmsms_to_hdf5 pipeline, returned as a flat
+            DataFrame with no HDF5 group hierarchy.
+        assign_dformats: When store_extra=True, assign data format labels
+            ('A', 'B', 'C', or '-') per spectrum. Defaults to True.
+        log_path: Path to a log file (only used when store_extra=True). Derived
+            automatically from output_path or pth if not given.
+        logger: Optional pre-configured logger. If provided, used as-is and log_path
+            is ignored. If None and store_extra=True, a logger is created automatically.
+    """
     if isinstance(pth, str):
         pth = Path(pth)
-    exp = pyms.MSExperiment()
-    if pth.suffix.lower() == '.mzml':
-        pyms.MzMLFile().load(str(pth), exp)
-    elif pth.suffix.lower() == '.mzxml':
-        pyms.MzXMLFile().load(str(pth), exp)
-    else:
-        raise ValueError(f'Unsupported file extension: {pth.suffix}.')
+
+    # Set up logger for store_extra mode
+    if logger is None and store_extra:
+        if log_path is None:
+            if output_path is not None:
+                log_path = os.path.splitext(str(output_path))[0] + '.log'
+            else:
+                log_path = str(pth.with_suffix('.log'))
+        logger = setup_logger(log_path, log_name=pth.stem)
+    if logger:
+        logger.info(f'Started processing {pth}')
+
+    exp = _load_experiment(pth, logger)
+    
+    problems = Counter()
+    if store_extra:
+
+        file_props, instrument_props = _validate_store_extra(exp, logger)
+        if file_props is None:
+            return pd.DataFrame()
+
+        tbxic_stdev = instrument_props.get('TBXICs median stdev')
+        instrument_name = instrument_props.get('instrument name')
 
     df = []
     automatic_scans_message = False
+
+    prev_spectra = {}
+    prev_spectrum = None
+    prec_spectra_data = {'peak list': [], 'RT': [], 'scan id': []}
+    prec_problems = Counter()
+    ms1_n, msn_n = 0, 0
+
     for i, spec in enumerate(tqdm(exp, desc=f'Reading {pth.name}', disable=not verbose)):
 
-        # Skip spectra that are not MS2
         mslevel = spec.getMSLevel()
-        if mslevel != 2:
-            continue
+        rt = spec.getRT()
 
-        # Get or assign scan numbers
+        acq_info = spec.getAcquisitionInfo()
+        inject_t = acq_info[0].getMetaValue('MS:1000927') if acq_info is not None and acq_info.size() > 0 else -1
+
+        if (mslevel != 2) and (not store_extra): continue 
+
+        # Track all spectra for precursor intensity lookup and validation (only needed with store_extra)
+        if mslevel == 1:
+            ms1_n += 1
+
+        if prev_spectrum is not None:
+            prev_spectra[prev_spectrum.getMSLevel()] = (prev_spectrum.get_peaks(), rt, i)
+        prev_spectrum = spec
+
         scan_i = re.search(r'scan=(\d+)', spec.getNativeID())
         if scan_i:
             scan_i = int(scan_i.group(1))
         else:
             if verbose and not automatic_scans_message:
-                print(f'Assigning scan numbers automatically (no "scan=" in the file).')
+                msg = 'Assigning scan numbers automatically (no "scan=" in the file).'
+                logger.info(msg) if logger else print(msg)
             scan_i = i + 1
-            automatic_scans_message = True
-
+            automatic_scans_message = True      
         if scan_range and (scan_i < scan_range[0] or scan_i > scan_range[1]):
             continue
 
-        # Get peak list and check for problems
-        peak_list = np.stack(spec.get_peaks())
-        spec_problems = su.is_valid_peak_list(peak_list, relative_intensities=False, return_problems_list=True, verbose=verbose)
-        if spec_problems:
-            if verbose:
-                print(f'Skipping spectrum {i} in {pth.name} with problems: {spec_problems}.')
+        if mslevel == 1:
             continue
+        
+        if store_extra and mslevel - 1 in prev_spectra:
+            
+            prec_entry = prev_spectra[mslevel-1]
+            prec_spectrum = prec_entry[0]
+
+            prec_pl = su.process_peak_list(np.array([prec_spectrum[0], prec_spectrum[1]]), sort_mzs=True)
+            prec_problems_list = su.is_valid_peak_list(prec_pl, return_problems_list=True,
+                                                   relative_intensities=False)
+            if prec_problems_list:
+                logger.error('Errors in precursor scan {}: {}'.format(
+                    prec_entry[2],
+                    json.dumps(prec_problems_list),
+                ))
+                for p in prec_problems_list:
+                    prec_problems[p] += 1
+                continue
+
+
+        if mslevel > 1:
+            msn_n += 1
+
+            peaks = spec.get_peaks()
+            if not peaks:
+                continue
+            mzs = peaks[0]
+            intensities = peaks[1]
+
+            if store_extra:
+                peak_list = su.process_peak_list(np.array([mzs, intensities]), sort_mzs=True)
+            else: 
+                peak_list = np.stack(spec.get_peaks())
+            problems_list = su.is_valid_peak_list(peak_list, return_problems_list=True, relative_intensities=False)
+            if problems_list:
+                if logger:
+                    logger.error('Errors in MSn scan {}: {}'.format(
+                        scan_i,
+                        json.dumps(problems_list)
+                        ))
+                for p in problems_list:
+                    problems[p] += 1
+                continue
 
         # Get precursor metadata
         prec = spec.getPrecursors()
@@ -533,15 +713,21 @@ def read_mzml(pth: Union[Path, str], verbose: bool = False, scan_range: Optional
         if prec.metaValueExists("isolation window target m/z"):
             prec_target_mz = prec.getMetaValue("isolation window target m/z")
         else:
-            prec_target_mz  = prec.getMZ()
-    
-        
-        polarity = spec.getInstrumentSettings().getPolarity()
+            prec_target_mz = prec.getMZ()
 
+        polarity = spec.getInstrumentSettings().getPolarity()
         window_lo = prec.getIsolationWindowLowerOffset()
         window_uo = prec.getIsolationWindowUpperOffset()
 
-        df.append({
+        if store_extra:
+            if polarity == pyms.IonSource.Polarity.POSITIVE:
+                polarity = 1
+            elif polarity == pyms.IonSource.Polarity.NEGATIVE:
+                polarity = 0
+            else:
+                polarity = -1
+
+        row = {
             FILE_NAME: pth.name,
             SCAN_NUMBER: scan_i,
             SPECTRUM: peak_list,
@@ -551,14 +737,67 @@ def read_mzml(pth: Union[Path, str], verbose: bool = False, scan_range: Optional
             'window_uo': window_uo,
             RT: spec.getRT(),
             CHARGE: prec.getCharge(),
+            'ms_level': mslevel,
             'polarity': polarity
-        })
+        }
+
+        if store_extra:
+
+            # Polarity as int (-1 = unknown, 0 = negative, 1 = positive)
+
+            # Spectrum type and filter string
+            spec_type = lcms.get_spectrum_type(spec)
+            scan_def = spec.getMetaValue('filter string')
+
+            # Precursor ion intensity from the preceding precursor scan
+            prec_intensity = -1.0
+            prec_target_intensity = -1.0
+            prec_intensity, prec_target_intensity = _lookup_precursor_intensity(prev_spectra, mslevel, prec.getMZ(), prec_target_mz)
+
+            row.update({
+                'ion_injection_time': inject_t,
+                'spectrum_type': spec_type.value,
+                'filter_str': scan_def if scan_def is not None else '',
+                'energy': prec.getActivationEnergy(),
+                'precursor_intensity': prec_intensity,
+                'precursor_target_intensity': prec_target_intensity,
+                'instrument_name': instrument_name,
+                'tbxic_stdev' : tbxic_stdev
+            })
+
+            if assign_dformats:
+                row['dformat'] = dformats.assign_dformat(
+                    peak_list, prec_mz=prec.getMZ(),
+                    tbxic_stdev=tbxic_stdev,
+                    charge=prec.getCharge(),
+                    mslevel=mslevel,
+                )
+
+        df.append(row)
 
     if scan_range and verbose:
-        print(f'Read {len(df)} valid MS2 spectra with scan numbers in the range {scan_range}.'
-              f' Max scan number in the file: {scan_i}.')
+        msg = (f'Read {len(df)} valid MSn spectra with scan numbers in the range {scan_range}.'
+               f' Max scan number in the file: {scan_i}.')
+        logger.info(msg) if logger else print(msg)
 
     df = pd.DataFrame(df)
+
+    if store_extra:
+        if len(df) > 0 and tbxic_stdev is not None:
+            df['instrument_accuracy_est'] = tbxic_stdev
+        logger.info(f'File properties: {json.dumps(file_props)}')
+        logger.info(f'Num. of MS1 spectra: {ms1_n}')
+        logger.info(f'Collected {len(df)} from {msn_n} total num. of MSn spectra')
+        logger.info(f'Spectra problems: {json.dumps(dict(problems))}')
+        logger.info(f'Precursor spectra problems: {json.dumps(dict(prec_problems))}')
+        if  len(df) > 0:
+            logger.info(f'Polarity: {df["polarity"].value_counts().to_json()}')
+            logger.info(f'Charge: {df[CHARGE].value_counts().to_json()}')
+            logger.info(f'Spectrum type hist: {df["spectrum_type"].value_counts().to_json()}')
+            
+    elif verbose and problems:
+        print(f'Spectra problems in {pth.name}: {dict(problems)}')
+
     return df
 
 
@@ -1034,14 +1273,14 @@ def parsed_lcmsms_to_hdf(
 
 
 
-def downloadpublicdata_to_hdf5s(downloads_log: Path, del_in=True, verbose=False, only_msn=False, only_format=None) -> None:
+def downloadpublicdata_to_hdf5s(downloads_log: Path, del_in=True, verbose=False) -> None:
     """
     Convert downloaded LC-MS/MS data (e.g., .mzML or .mzXML) to .hdf5 format.
 
     Args:
     downloads_log (Path): Path to the log file from `downloadpublicdata` containing information about downloaded files.
     del_in (bool, optional): Whether to delete the input files after conversion. Defaults to True.
-    verbose (bool, optional): Whether to print additional information during the conversion. Defaults to True.
+    verbose (bool, optional): Whether to print additional information during the conversion. Defaults to False.
     """
     # Open `downloadpublicdata` downloads log
     df = pd.read_csv(downloads_log, sep='\t')
@@ -1053,7 +1292,9 @@ def downloadpublicdata_to_hdf5s(downloads_log: Path, del_in=True, verbose=False,
             if verbose:
                 print(f"{row['usi']} was successfully downloaded.")
             out_pth = prepend_to_stem(in_pth, row['usi'].split(':')[1]).with_suffix('.hdf5')
-            lcmsms_to_hdf5(input_path=in_pth, output_path=out_pth, verbose=verbose, del_in=del_in, only_msn=only_msn, only_format=only_format)
+            read_mzml(pth=in_pth, output_path=out_pth, store_extra=True, verbose=verbose)
+            if del_in:
+                os.remove(in_pth)
         else:
             if verbose:
                 print(f"Skipping {row['usi']} because it was not downloaded.")
@@ -1063,18 +1304,19 @@ def merge_lcmsms_hdf5s(
         in_pths: Union[Path, Iterable[Path]],
         out_pth: Path,
         dformat: str = 'A',
-        store_acc_est: bool = True,
         verbose: bool = True,
         compression: Optional[str] = 'gzip',
         compression_level: int = 6
     ):
     """
-    Merge .hdf5 files generated with `lcmsms_to_hdf5`.
+    Merge flat .hdf5 files (produced by read_mzml with store_extra=True) into a
+    single output file.
 
     Args:
         in_pths: Directory or iterable of .hdf5 files.
         out_pth: Output .hdf5 file.
-        store_acc_est: Whether to store instrument accuracy estimate.
+        dformat: Data format label used to determine peak list size limits and
+            minimum spectra per file ('A', 'B', or 'C').
         verbose: Verbose output.
         compression: Compression method for HDF5 datasets (e.g. 'gzip', None).
         compression_level: Compression level (0–9) when using gzip.
@@ -1096,44 +1338,42 @@ def merge_lcmsms_hdf5s(
         try:
             with h5py.File(in_pth, 'a') as f_in:
 
-                n_spectra = f_in['MSn data']['mzs'].shape[0]
-                if not f_in.attrs['Ordered RT']:
+                if SPECTRUM not in f_in:
                     continue
+
+                n_spectra = f_in[SPECTRUM].shape[0]
                 if n_spectra < dformat_filters.min_file_spectra:
                     continue
 
-                if 'dformat' not in f_in['MSn data']:
+                # Assign dformat if not already present
+                if 'dformat' not in f_in:
                     dformat_array = np.empty(n_spectra, dtype=h5py.string_dtype())
-                    specs = np.stack([f_in['MSn data']['mzs'][:],
-                                      f_in['MSn data']['intensities'][:]], axis=1)
-                    prec_mzs = f_in['MSn data']['precursor mz'][:]
+                    prec_mzs = f_in[PRECURSOR_MZ][:] if PRECURSOR_MZ in f_in else np.zeros(n_spectra)
                     for i in range(n_spectra):
-                        dformat_array[i] = dformats.assign_dformat(specs[i], prec_mz=prec_mzs[i])
-                    f_in['MSn data'].create_dataset('dformat', data=dformat_array)
+                        dformat_array[i] = dformats.assign_dformat(f_in[SPECTRUM][i], prec_mz=prec_mzs[i])
+                    f_in.create_dataset('dformat', data=dformat_array)
 
-                spectra = np.stack([f_in['MSn data']['mzs'][:],
-                                    f_in['MSn data']['intensities'][:]], axis=1)
-
+                spectra = f_in[SPECTRUM][:]
                 if spectra.shape[2] > dformat_filters.max_peaks_n:
                     spectra = su.trim_peak_list(spectra, dformat_filters.max_peaks_n)
                 elif spectra.shape[2] < dformat_filters.max_peaks_n:
                     spectra = su.pad_peak_list(spectra, dformat_filters.max_peaks_n)
 
                 datasets = [
-                    (SPECTRUM, spectra, f_in['MSn data']['mzs'].dtype),
+                    (SPECTRUM, spectra, spectra.dtype),
                     (FILE_NAME, [in_pth.stem] * n_spectra, h5py.string_dtype())
                 ]
-                exclude = {'mzs', 'intensities', 'ion injection time', 'precursor id', 'def str'}
-                all_keys = [k for k in f_in['MSn data'].keys() if k not in exclude]
-                datasets.extend(
-                    [(n, f_in['MSn data'][n][:], f_in['MSn data'][n].dtype) for n in all_keys]
-                )
-                if store_acc_est:
-                    datasets.append(
-                        ('instrument accuracy est.',
-                         np.repeat(f_in.attrs['TBXICs median stdev'], n_spectra),
-                         np.float32)
-                    )
+                exclude = {SPECTRUM, FILE_NAME}
+                all_keys = [k for k in f_in.keys() if k not in exclude]
+                # datasets.extend(
+                #     [(n, f_in[n][:], f_in[n].dtype) for n in all_keys]
+                # )
+                for n in all_keys:
+                    ds = f_in[n]
+                    print(f'  key={n!r:30s}  dtype={ds.dtype}  shape={ds.shape}')
+                    datasets.append((n, ds[:], ds.dtype))
+
+                #TODO: replace back once find error
 
                 for name, data, dtype in datasets:
                     create_kwargs = dict(
