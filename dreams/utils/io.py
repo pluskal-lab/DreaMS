@@ -856,9 +856,6 @@ def _write_flat_hdf5(
     peaks_n = np.array([pl.shape[1] for pl in peak_lists])
     max_peaks_n = int(peaks_n.max())
     if n_highest_peaks and max_peaks_n > n_highest_peaks:
-        if logger:
-            logger.info(f'Trimming peaks to {n_highest_peaks} (max was {max_peaks_n}, '
-                        f'mean was {peaks_n.mean():.1f}, median was {np.median(peaks_n):.1f}).')
         max_peaks_n = n_highest_peaks
         peak_lists = np.array([su.trim_peak_list(pl, max_peaks_n) for pl in peak_lists])
     peak_lists = np.stack([su.pad_peak_list(pl, max_peaks_n) for pl in peak_lists])
