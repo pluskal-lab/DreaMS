@@ -521,6 +521,7 @@ def _validate_store_extra(exp: pyms.MSExperiment, logger) -> Tuple[Optional[dict
     skip_orders = {
         lcms.MSLevelsOrder.INVALID, lcms.MSLevelsOrder.EMPTY,
         lcms.MSLevelsOrder.SINGLE_MS1, lcms.MSLevelsOrder.UNIFORM_MS1,
+        lcms.MSLevelsOrder.MISSING_MS1
     }
     if order in skip_orders:
         logger.info(f'Not processing the file because of {order}')
