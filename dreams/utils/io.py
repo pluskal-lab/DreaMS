@@ -518,14 +518,14 @@ def _load_experiment(pth: Path, logger) -> Optional[pyms.MSExperiment]:
         return None
     return exp
 
-def _validate_store_extra(exp: pyms.MSExperiment, logger) -> Tuple[Optional[dict], Optional[dict]]:
+def _validate_store_extra(exp: pyms.MSExperiment, pth: Path, logger) -> Tuple[Optional[dict], Optional[dict]]:
     """
     Run file-level checks required for store_extra mode.
 
     Returns (file_props, instrument_props) on success,
     or (None, None) if the file should be skipped.
     """
-    file_props = {'name': os.path.basename(str(logger.name))}  # logger.name == pth.stem
+    file_props = {'name': pth.name}
     lcms.remove_electromagnetic_spectra(exp)
 
     file_props['Ordered RT'] = lcms.sorted_by_rt(exp)
@@ -630,11 +630,13 @@ def read_mzml(
         logger.info(f'Started processing {pth}')
 
     exp = _load_experiment(pth, logger)
+    if not exp: 
+        return pd.DataFrame()
     
     problems = Counter()
     if store_extra:
 
-        file_props, instrument_props = _validate_store_extra(exp, logger)
+        file_props, instrument_props = _validate_store_extra(exp, pth, logger)
         if file_props is None:
             return pd.DataFrame()
 
@@ -824,7 +826,8 @@ def read_mzml(
         df = df[df['dformat'] == only_format].reset_index(drop=True)
 
     if df.empty:
-        logger.warning(f'No MSn spectra collected from {pth.name}, not storing .hdf5 file.')
+        if logger:
+            logger.warning(f'No MSn spectra collected from {pth.name}, not storing .hdf5 file.')
         return None
     # Write flat HDF5 file (only in store_extra mode; without store_extra the
     # caller — e.g. MSData.from_mzml — handles HDF5 writing via from_pandas)
