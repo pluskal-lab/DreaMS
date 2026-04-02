@@ -871,12 +871,19 @@ def _write_flat_hdf5(
         logger: Optional logger.
     """
     # Process peak lists: trim/pad to n_highest_peaks
-    peak_lists = df[SPECTRUM].values
+    peak_lists = list(df[SPECTRUM].values)
     peaks_n = np.array([pl.shape[1] for pl in peak_lists])
     max_peaks_n = int(peaks_n.max())
     if n_highest_peaks and max_peaks_n > n_highest_peaks:
+        if logger:
+            logger.info('Trimming MSn peaks to {} peaks (max was {}, mean was {}, median was {}).'.format(
+                n_highest_peaks,
+                max_peaks_n,
+                peaks_n.mean(),
+                np.median(peaks_n)
+            ))
         max_peaks_n = n_highest_peaks
-        peak_lists = np.array([su.trim_peak_list(pl, max_peaks_n) for pl in peak_lists])
+        peak_lists = [su.trim_peak_list(pl, max_peaks_n) for pl in peak_lists]
     peak_lists = np.stack([su.pad_peak_list(pl, max_peaks_n) for pl in peak_lists])
 
     with h5py.File(output_path, 'w') as hdf_file:
