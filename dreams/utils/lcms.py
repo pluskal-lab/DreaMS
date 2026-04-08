@@ -42,6 +42,9 @@ class MSLevelsOrder(Enum):
     # e.g. [2]
     SINGLE_MSN = auto()
 
+    # File misses MS1 precursor spectra
+    MISSING_MS1 = auto()
+
     # For all i: l_i = l_(i-1)
     # e.g. [1, 1, 1, 1]
     UNIFORM_MS1 = auto()
@@ -89,6 +92,10 @@ def get_order_of_spectra(msdata) -> MSLevelsOrder:
             return MSLevelsOrder.SINGLE_MS1
         else:
             return MSLevelsOrder.SINGLE_MSN
+
+    # Check that MS1 is present
+    if 1 not in ms_levels:
+        return MSLevelsOrder.MISSING_MS1
 
     # Go over all pairs of subsequent MS levels and classify
     # their difference to MSLevelOrder's
@@ -296,19 +303,27 @@ def remove_electromagnetic_spectra(msdata):
     return msdata
 
 def get_instrument_props(msdata):
+    try:
+        xics1, xics = get_tight_xics(msdata)
+        xics_stdev = [stats.stdev(xic[0]) for xic in xics]
 
-    xics1, xics = get_tight_xics(msdata)
-    xics_stdev = [stats.stdev(xic[0]) for xic in xics]
-
-    quality_props = {
-        'instrument name': msdata.getInstrument().getName(),
-        '#TBXICs(1)': len(xics1),
-        '#TBXICs': len(xics),
-        'TBXICs mean stdev': stats.mean(xics_stdev) if xics_stdev else None,
-        'TBXICs median stdev': stats.median(xics_stdev) if xics_stdev else None
-    }
-
-    return quality_props
+        quality_props = {
+            'instrument name': msdata.getInstrument().getName(),
+            '#TBXICs(1)': len(xics1),
+            '#TBXICs': len(xics),
+            'TBXICs mean stdev': stats.mean(xics_stdev) if xics_stdev else None,
+            'TBXICs median stdev': stats.median(xics_stdev) if xics_stdev else None
+        }
+        return quality_props
+    except Exception as e:
+        print(f'WARNING: Could not calculate instrument properties: {e}')
+        return {
+            'instrument name': 'Unknown',
+            '#TBXICs(1)': -1,
+            '#TBXICs': -1,
+            'TBXICs mean stdev': None,
+            'TBXICs median stdev': None
+        }
 
 
 def get_pwiz_stats(msdata):
