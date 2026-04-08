@@ -770,7 +770,7 @@ def read_mzml(
 
             # Spectrum type and filter string
             spec_type = lcms.get_spectrum_type(spec)
-            scan_def = spec.getMetaValue('filter string')
+            scan_def = spec.getMetaValue('filter string') if spec.metaValueExists('filter string') else None
 
             # Precursor ion intensity from the preceding precursor scan
             prec_intensity = -1.0
@@ -871,6 +871,7 @@ def _write_flat_hdf5(
         logger: Optional logger.
     """
     # Process peak lists: trim/pad to n_highest_peaks
+    df = df.fillna(-1)
     peak_lists = list(df[SPECTRUM].values)
     peaks_n = np.array([pl.shape[1] for pl in peak_lists])
     max_peaks_n = int(peaks_n.max())
@@ -885,7 +886,6 @@ def _write_flat_hdf5(
         max_peaks_n = n_highest_peaks
         peak_lists = [su.trim_peak_list(pl, max_peaks_n) for pl in peak_lists]
     peak_lists = np.stack([su.pad_peak_list(pl, max_peaks_n) for pl in peak_lists])
-
     with h5py.File(output_path, 'w') as hdf_file:
         # Save file_props as HDF5 attributes
         if file_props is not None:
@@ -899,38 +899,38 @@ def _write_flat_hdf5(
         # Metadata — dtypes and compression match parsed_lcmsms_to_hdf
         hdf_file.create_dataset(FILE_NAME, data=[df[FILE_NAME].iloc[0]] * len(df),
                                 dtype=h5py.string_dtype(), compression=compress_full_lvl)
-        hdf_file.create_dataset(PRECURSOR_MZ, data=df[PRECURSOR_MZ].values, dtype='f4',
+        hdf_file.create_dataset(PRECURSOR_MZ, data=df[PRECURSOR_MZ], dtype='f4',
                                 compression=compress_full_lvl)
-        hdf_file.create_dataset('precursor_target_mz', data=df['precursor_target_mz'].values, dtype='f4',
+        hdf_file.create_dataset('precursor_target_mz', data=df['precursor_target_mz'], dtype='f4',
                                 compression=compress_full_lvl)
-        hdf_file.create_dataset(RT, data=df[RT].values, dtype='f4', compression=compress_full_lvl)
-        hdf_file.create_dataset(CHARGE, data=df[CHARGE].values, dtype='i1', compression=compress_full_lvl)
-        hdf_file.create_dataset(SCAN_NUMBER, data=df[SCAN_NUMBER].values, dtype='i4',
+        hdf_file.create_dataset(RT, data=df[RT], dtype='f4', compression=compress_full_lvl)
+        hdf_file.create_dataset(CHARGE, data=df[CHARGE], dtype='i1', compression=compress_full_lvl)
+        hdf_file.create_dataset(SCAN_NUMBER, data=df[SCAN_NUMBER], dtype='i4',
                                 compression=compress_full_lvl)
-        hdf_file.create_dataset('MS level', data=df['ms_level'].values, dtype='i1',
+        hdf_file.create_dataset('MS level', data=df['ms_level'], dtype='i1',
                                 compression=compress_full_lvl)
-        hdf_file.create_dataset('positive polarity', data=df['polarity'].values, dtype='i1',
+        hdf_file.create_dataset('positive polarity', data=df['polarity'], dtype='i1',
                                 compression=compress_full_lvl)
-        hdf_file.create_dataset('window lo', data=df['window_lo'].values, dtype='f4',
+        hdf_file.create_dataset('window lo', data=df['window_lo'], dtype='f4',
                                 compression=compress_full_lvl)
-        hdf_file.create_dataset('window uo', data=df['window_uo'].values, dtype='f4',
+        hdf_file.create_dataset('window uo', data=df['window_uo'], dtype='f4',
                                 compression=compress_full_lvl)
 
         if store_extra:
-            hdf_file.create_dataset('ion injection time', data=df['ion_injection_time'].values, dtype='f4',
+            hdf_file.create_dataset('ion injection time', data=df['ion_injection_time'], dtype='f4',
                                     compression=compress_full_lvl)
-            hdf_file.create_dataset('type', data=df['spectrum_type'].values, dtype='i1',
+            hdf_file.create_dataset('type', data=df['spectrum_type'], dtype='i1',
                                     compression=compress_full_lvl)
-            hdf_file.create_dataset('def str', data=df['filter_str'].values.astype(str),
+            hdf_file.create_dataset('def str', data=df['filter_str'],
                                     dtype=h5py.string_dtype('utf-8', None), compression=compress_full_lvl)
-            hdf_file.create_dataset('energy', data=df['energy'].values, dtype='f4',
+            hdf_file.create_dataset('energy', data=df['energy'], dtype='f4',
                                     compression=compress_full_lvl)
-            hdf_file.create_dataset('precursor intensity', data=df['precursor_intensity'].values, dtype='f4',
+            hdf_file.create_dataset('precursor intensity', data=df['precursor_intensity'], dtype='f4',
                                     compression=compress_full_lvl)
-            hdf_file.create_dataset('precursor target intensity', data=df['precursor_target_intensity'].values,
+            hdf_file.create_dataset('precursor target intensity', data=df['precursor_target_intensity'],
                                     dtype='f4', compression=compress_full_lvl)
             if 'dformat' in df.columns:
-                hdf_file.create_dataset('dformat', data=df['dformat'].values.astype(str), dtype='S1',
+                hdf_file.create_dataset('dformat', data=df['dformat'], dtype='S1',
                                         compression=compress_full_lvl)
 
     if logger:
