@@ -334,16 +334,23 @@ class MSData:
     @staticmethod
     def from_mzml(
         pth: Union[Path, str],
+        output_pth: Union[Path, str] = None,
         scan_range: Optional[Tuple[int, int]] = None,
         verbose_parser: bool = False,
+        store_extra: bool = False,
+        log_path: Optional[Union[Path, str]] = None,
         **kwargs
     ):
-        # TODO: use mzml reader from process_ms_file.py, move it here
-        # TODO: refactor trimming and padding, no hard-coded 128
-
         pth = Path(pth)
-        df = io.read_mzml(pth, scan_range=scan_range, verbose=verbose_parser)
-        hdf5_pth = pth.with_suffix('.hdf5')
+        logger = None
+        if store_extra:
+            log_path = log_path or str(output_pth.with_suffix('.log'))
+            logger = io.setup_logger(log_path, log_name=pth.stem)
+        df = io.read_mzml(pth, output_path=output_pth, scan_range=scan_range, verbose=verbose_parser, store_extra=store_extra, logger=logger)
+
+        hdf5_pth = output_pth
+        if output_pth is None:
+            hdf5_pth = pth.with_suffix('.hdf5')
         if scan_range:
             hdf5_pth = io.append_to_stem(pth, f'scans_{scan_range[0]}-{scan_range[1]}')
         return MSData.from_pandas(df, hdf5_pth=hdf5_pth, **kwargs)
