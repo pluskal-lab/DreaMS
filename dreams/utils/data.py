@@ -615,7 +615,8 @@ class MSData:
         # TODO: spectra_already_trimmed can be determined from the data
 
         os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
-        logger.info(f'Using HDF5_USE_FILE_LOCKING={os.environ["HDF5_USE_FILE_LOCKING"]}.')
+        if logger:
+            logger.info(f'Using HDF5_USE_FILE_LOCKING={os.environ["HDF5_USE_FILE_LOCKING"]}.')
 
         for pth in pths:
             if not pth.exists():
@@ -626,7 +627,8 @@ class MSData:
         if not cols:
             with h5py.File(pths[0], 'r') as f:
                 cols = list(f.keys())
-                logger.info(f'Columns not specified, using all columns from the first dataset: {cols}.')
+                if logger:
+                    logger.info(f'Columns not specified, using all columns from the first dataset: {cols}.')
 
         for col in cols:
             if not all(col in h5py.File(pth, 'r').keys() for pth in pths):
