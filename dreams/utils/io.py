@@ -930,7 +930,7 @@ def _write_flat_hdf5(
             hdf_file.create_dataset('precursor target intensity', data=df['precursor_target_intensity'],
                                     dtype='f4', compression=compress_full_lvl)
             if 'dformat' in df.columns:
-                hdf_file.create_dataset('dformat', data=df['dformat'], dtype='S1',
+                hdf_file.create_dataset('dformat', data=df['dformat'], dtype='S3',
                                         compression=compress_full_lvl)
 
     if logger:
