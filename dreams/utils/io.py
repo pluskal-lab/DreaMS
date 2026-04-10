@@ -930,7 +930,7 @@ def _write_flat_hdf5(
             hdf_file.create_dataset('precursor target intensity', data=df['precursor_target_intensity'],
                                     dtype='f4', compression=compress_full_lvl)
             if 'dformat' in df.columns:
-                hdf_file.create_dataset('dformat', data=df['dformat'], dtype='S1',
+                hdf_file.create_dataset('dformat', data=df['dformat'], dtype='S3',
                                         compression=compress_full_lvl)
 
     if logger:
@@ -1341,7 +1341,7 @@ def parsed_lcmsms_to_hdf(
                                      compression=compress_full_lvl)
             if 'dformat' in df_msn_data:
                 # Char dtype
-                msn_group.create_dataset('dformat', data=df_msn_data['dformat'], dtype='S1',
+                msn_group.create_dataset('dformat', data=df_msn_data['dformat'], dtype='S3',
                                          compression=compress_full_lvl)
 
             # Create hdf5 datasets for the data of precursor spectra
