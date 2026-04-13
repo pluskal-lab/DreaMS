@@ -772,6 +772,8 @@ def read_mzml(
             spec_type = lcms.get_spectrum_type(spec)
             scan_def = spec.getMetaValue('filter string') if spec.metaValueExists('filter string') else None
 
+            collision_energy = prec.getMetaValue('collision energy') if prec.metaValueExists('collision energy') else 0
+
             # Precursor ion intensity from the preceding precursor scan
             prec_intensity = -1.0
             prec_target_intensity = -1.0
@@ -785,7 +787,8 @@ def read_mzml(
                 'precursor_intensity': prec_intensity,
                 'precursor_target_intensity': prec_target_intensity,
                 'instrument_name': instrument_name,
-                'tbxic_stdev' : tbxic_stdev
+                'tbxic_stdev' : tbxic_stdev,
+                'collision_energy' : collision_energy
             })
 
             if assign_dformats:
@@ -923,7 +926,9 @@ def _write_flat_hdf5(
                                     compression=compress_full_lvl)
             hdf_file.create_dataset('def str', data=df['filter_str'],
                                     dtype=h5py.string_dtype('utf-8', None), compression=compress_full_lvl)
-            hdf_file.create_dataset('energy', data=df['energy'], dtype='f4',
+            hdf_file.create_dataset('activation_energy', data=df['energy'], dtype='f4',
+                                    compression=compress_full_lvl)
+            hdf_file.create_dataset('collision_energy', data=df['collision_energy'], dtype='f4',
                                     compression=compress_full_lvl)
             hdf_file.create_dataset('precursor intensity', data=df['precursor_intensity'], dtype='f4',
                                     compression=compress_full_lvl)
