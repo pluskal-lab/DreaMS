@@ -35,6 +35,7 @@ setup(
         "h5py==3.11.0",
         "rdkit==2023.9.6",
         "umap-learn==0.5.6",
+        "scikit-learn<1.6",
         "seaborn==0.13.2",
         "plotly==5.20.0",
         "ase==3.22.1",
