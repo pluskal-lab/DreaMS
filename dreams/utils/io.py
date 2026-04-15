@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import urllib.parse as urlparse
 import contextlib
 import time
+from lxml import etree
 import io as std_io
 import wandb
 with contextlib.redirect_stderr(std_io.StringIO()):
@@ -540,7 +541,8 @@ def _validate_store_extra(exp: pyms.MSExperiment, pth: Path, logger) -> Tuple[Op
         lcms.MSLevelsOrder.MISSING_MS1
     }
     if order in skip_orders:
-        logger.info(f'Not processing the file because of {order}')
+        if logger:
+            logger.info(f'Not processing the file because of {order}')
         return None, None
 
     instrument_props = lcms.get_instrument_props(exp)
@@ -574,7 +576,16 @@ def _lookup_precursor_intensity(
 
     return nearest_intensity(prec_mz), nearest_intensity(target_mz)
 
-
+def extract_ce(path):
+    out = {}
+    for _, elem in etree.iterparse(path, events=("end",), tag="{*}scan"):
+        if elem.get("msLevel") == "2":
+            ce = elem.get("collisionEnergy")
+            num = elem.get("num")
+            if ce is not None and num is not None:
+                out[int(num)] = float(ce)
+        elem.clear()
+    return out
 
 def read_mzml(
     pth: Union[Path, str],
@@ -632,6 +643,14 @@ def read_mzml(
     exp = _load_experiment(pth, logger)
     if not exp: 
         return pd.DataFrame()
+
+    mzxml_energies = None
+    if pth.suffix == '.mzXML':
+        try:
+            mzxml_energies = extract_ce(pth)
+        except Exception as e:
+            if logger:
+                logger.warning(f'Failed to extract collision energies from mzXML: {e}')
     
     problems = Counter()
     if store_extra:
@@ -773,7 +792,8 @@ def read_mzml(
             scan_def = spec.getMetaValue('filter string') if spec.metaValueExists('filter string') else None
 
             collision_energy = prec.getMetaValue('collision energy') if prec.metaValueExists('collision energy') else 0
-
+            if collision_energy == 0 and mzxml_energies:
+                collision_energy = mzxml_energies.get(scan_i, 0)
             # Precursor ion intensity from the preceding precursor scan
             prec_intensity = -1.0
             prec_target_intensity = -1.0
