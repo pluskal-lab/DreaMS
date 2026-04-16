@@ -219,10 +219,10 @@ def dreams_predictions(
     return preds
 
 
-def dreams_embeddings(pth, batch_size=32, progress_bar=True, logger_pth=None, store_embs=False, **msdata_kwargs):
+def dreams_embeddings(pth, model_pth=DREAMS_EMBEDDING, batch_size=32, progress_bar=True, logger_pth=None, store_embs=False, **msdata_kwargs):
     return dreams_predictions(
-        DREAMS_EMBEDDING, pth, batch_size=batch_size, progress_bar=progress_bar, logger_pth=logger_pth,
-        store_preds=store_embs, **msdata_kwargs
+        model_ckpt=model_pth, spectra=pth, model_cls=ContrastiveHead, batch_size=batch_size, progress_bar=progress_bar,
+        logger_pth=logger_pth, store_preds=store_embs, **msdata_kwargs, title=DREAMS_EMBEDDING
     )
 
 
@@ -729,16 +729,18 @@ class DreaMSSearch:
     def __init__(
         self,
         ref_spectra: T.Union[Path, str, du.MSData],
+        model_pth: T.Union[Path, str] = DREAMS_EMBEDDING,
         in_mem: bool = True,
         verbose: bool = True
     ):
+        self.model_pth = model_pth
         self.in_mem = in_mem
         self.verbose = verbose
         if not isinstance(ref_spectra, du.MSData):
             ref_spectra = du.MSData.load(ref_spectra, in_mem=in_mem, mode='a')
         self.ref_spectra = ref_spectra
         if DREAMS_EMBEDDING not in self.ref_spectra.columns():
-            dreams_embeddings(self.ref_spectra, store_embs=True)
+            dreams_embeddings(self.ref_spectra, model_pth=self.model_pth, store_embs=True)
 
     def query(
         self,
@@ -766,7 +768,7 @@ class DreaMSSearch:
             query_spectra = du.MSData.load(query_spectra, in_mem=True, mode='a')
         
         if DREAMS_EMBEDDING not in query_spectra.columns():
-            dreams_embeddings(query_spectra, store_embs=True)
+            dreams_embeddings(query_spectra, model_pth=self.model_pth, store_embs=True)
 
         # Search for top-k neighbors
         if self.verbose:
