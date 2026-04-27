@@ -909,57 +909,95 @@ def _write_flat_hdf5(
         max_peaks_n = n_highest_peaks
         peak_lists = [su.trim_peak_list(pl, max_peaks_n) for pl in peak_lists]
     peak_lists = np.stack([su.pad_peak_list(pl, max_peaks_n) for pl in peak_lists])
-    with h5py.File(output_path, 'w') as hdf_file:
-        # Save file_props as HDF5 attributes
-        if file_props is not None:
-            for k, v in file_props.items():
-                hdf_file.attrs[k] = v if v is not None else -1
 
-        # Peak lists — combined (N, 2, peaks) spectrum dataset
-        hdf_file.create_dataset(SPECTRUM, data=peak_lists, compression='gzip',
-                                compression_opts=compress_peaks_lvl)
+    # SAFE MODE: write to <stem>.hdf5.tmp, verify, then atomically rename onto
+    # the final path. On any failure the tmp is deleted and the exception
+    # propagates so the caller's retry loop can fire. The source .mzML is
+    # never touched by this function.
+    final_out_pth = Path(output_path)
+    temp_out_pth = final_out_pth.with_suffix('.hdf5.tmp')
 
-        # Metadata — dtypes and compression match parsed_lcmsms_to_hdf
-        hdf_file.create_dataset(FILE_NAME, data=[df[FILE_NAME].iloc[0]] * len(df),
-                                dtype=h5py.string_dtype(), compression=compress_full_lvl)
-        hdf_file.create_dataset(PRECURSOR_MZ, data=df[PRECURSOR_MZ], dtype='f4',
-                                compression=compress_full_lvl)
-        hdf_file.create_dataset('precursor_target_mz', data=df['precursor_target_mz'], dtype='f4',
-                                compression=compress_full_lvl)
-        hdf_file.create_dataset(RT, data=df[RT], dtype='f4', compression=compress_full_lvl)
-        hdf_file.create_dataset(CHARGE, data=df[CHARGE], dtype='i1', compression=compress_full_lvl)
-        hdf_file.create_dataset(SCAN_NUMBER, data=df[SCAN_NUMBER], dtype='i4',
-                                compression=compress_full_lvl)
-        hdf_file.create_dataset('MS level', data=df['ms_level'], dtype='i1',
-                                compression=compress_full_lvl)
-        hdf_file.create_dataset('positive polarity', data=df['polarity'], dtype='i1',
-                                compression=compress_full_lvl)
-        hdf_file.create_dataset('window lo', data=df['window_lo'], dtype='f4',
-                                compression=compress_full_lvl)
-        hdf_file.create_dataset('window uo', data=df['window_uo'], dtype='f4',
-                                compression=compress_full_lvl)
+    if temp_out_pth.exists():
+        try:
+            os.remove(temp_out_pth)
+        except OSError:
+            pass
 
-        if store_extra:
-            hdf_file.create_dataset('ion injection time', data=df['ion_injection_time'], dtype='f4',
+    try:
+        with h5py.File(str(temp_out_pth), 'w') as hdf_file:
+            # Save file_props as HDF5 attributes
+            if file_props is not None:
+                for k, v in file_props.items():
+                    hdf_file.attrs[k] = v if v is not None else -1
+
+            # Peak lists — combined (N, 2, peaks) spectrum dataset
+            hdf_file.create_dataset(SPECTRUM, data=peak_lists, compression='gzip',
+                                    compression_opts=compress_peaks_lvl)
+
+            # Metadata — dtypes and compression match parsed_lcmsms_to_hdf
+            hdf_file.create_dataset(FILE_NAME, data=[df[FILE_NAME].iloc[0]] * len(df),
+                                    dtype=h5py.string_dtype(), compression=compress_full_lvl)
+            hdf_file.create_dataset(PRECURSOR_MZ, data=df[PRECURSOR_MZ], dtype='f4',
                                     compression=compress_full_lvl)
-            hdf_file.create_dataset('type', data=df['spectrum_type'], dtype='i1',
+            hdf_file.create_dataset('precursor_target_mz', data=df['precursor_target_mz'], dtype='f4',
                                     compression=compress_full_lvl)
-            hdf_file.create_dataset('def str', data=df['filter_str'],
-                                    dtype=h5py.string_dtype('utf-8', None), compression=compress_full_lvl)
-            hdf_file.create_dataset('activation_energy', data=df['energy'], dtype='f4',
+            hdf_file.create_dataset(RT, data=df[RT], dtype='f4', compression=compress_full_lvl)
+            hdf_file.create_dataset(CHARGE, data=df[CHARGE], dtype='i1', compression=compress_full_lvl)
+            hdf_file.create_dataset(SCAN_NUMBER, data=df[SCAN_NUMBER], dtype='i4',
                                     compression=compress_full_lvl)
-            hdf_file.create_dataset('collision_energy', data=df['collision_energy'], dtype='f4',
+            hdf_file.create_dataset('MS level', data=df['ms_level'], dtype='i1',
                                     compression=compress_full_lvl)
-            hdf_file.create_dataset('precursor intensity', data=df['precursor_intensity'], dtype='f4',
+            hdf_file.create_dataset('positive polarity', data=df['polarity'], dtype='i1',
                                     compression=compress_full_lvl)
-            hdf_file.create_dataset('precursor target intensity', data=df['precursor_target_intensity'],
-                                    dtype='f4', compression=compress_full_lvl)
-            if 'dformat' in df.columns:
-                hdf_file.create_dataset('dformat', data=df['dformat'], dtype='S3',
+            hdf_file.create_dataset('window lo', data=df['window_lo'], dtype='f4',
+                                    compression=compress_full_lvl)
+            hdf_file.create_dataset('window uo', data=df['window_uo'], dtype='f4',
+                                    compression=compress_full_lvl)
+
+            if store_extra:
+                hdf_file.create_dataset('ion injection time', data=df['ion_injection_time'], dtype='f4',
                                         compression=compress_full_lvl)
+                hdf_file.create_dataset('type', data=df['spectrum_type'], dtype='i1',
+                                        compression=compress_full_lvl)
+                hdf_file.create_dataset('def str', data=df['filter_str'],
+                                        dtype=h5py.string_dtype('utf-8', None), compression=compress_full_lvl)
+                hdf_file.create_dataset('activation_energy', data=df['energy'], dtype='f4',
+                                        compression=compress_full_lvl)
+                hdf_file.create_dataset('collision_energy', data=df['collision_energy'], dtype='f4',
+                                        compression=compress_full_lvl)
+                hdf_file.create_dataset('precursor intensity', data=df['precursor_intensity'], dtype='f4',
+                                        compression=compress_full_lvl)
+                hdf_file.create_dataset('precursor target intensity', data=df['precursor_target_intensity'],
+                                        dtype='f4', compression=compress_full_lvl)
+                if 'dformat' in df.columns:
+                    hdf_file.create_dataset('dformat', data=df['dformat'], dtype='S3',
+                                            compression=compress_full_lvl)
 
-    if logger:
-        logger.info(f'Saved {len(df)} spectra to {output_path}')
+        if verify_hdf5_integrity(temp_out_pth):
+            if final_out_pth.exists():
+                try:
+                    os.remove(final_out_pth)
+                except OSError:
+                    pass
+            os.rename(temp_out_pth, final_out_pth)
+            if logger:
+                logger.info(f'Saved {len(df)} spectra to {final_out_pth}')
+        else:
+            if logger:
+                logger.error(f'SAFE MODE: Generated file {temp_out_pth} was corrupted. Deleting.')
+            if temp_out_pth.exists():
+                os.remove(temp_out_pth)
+            raise IOError(f'HDF5 integrity verification failed for {temp_out_pth}')
+
+    except Exception as e:
+        if logger:
+            logger.error(f'SAFE MODE: Critical error during HDF5 writing: {e}')
+        if temp_out_pth.exists():
+            try:
+                os.remove(temp_out_pth)
+            except OSError:
+                pass
+        raise
 
 
 def lcmsms_to_hdf5(
