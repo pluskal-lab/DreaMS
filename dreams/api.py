@@ -59,14 +59,14 @@ class PreTrainedModel:
 
         if ckpt_cls == DreaMSModel:
 
-            ckpt = ckpt_cls.load_from_checkpoint(ckpt_path, map_location=device)
+            ckpt = ckpt_cls.load_from_checkpoint(ckpt_path, map_location=device, weights_only=False)
 
             # If DreaMS arguments are provided, reload the model with the updated arguments
             # (first load is needed to get the original arguments)
             if dreams_args is not None:
                 args_dict = vars(ckpt.hparams["args"])
                 args_dict.update(dreams_args)
-                ckpt = ckpt_cls.load_from_checkpoint(ckpt_path, map_location=device, args=Namespace(**args_dict))
+                ckpt = ckpt_cls.load_from_checkpoint(ckpt_path, map_location=device, args=Namespace(**args_dict), weights_only=False)
 
             model = cls(
                 ckpt,
@@ -91,7 +91,8 @@ class PreTrainedModel:
                 ckpt_cls.load_from_checkpoint(
                     ckpt_path,
                     backbone_pth=backbone_pth,
-                map_location=device
+                map_location=device,
+                weights_only=False
                 ),
                 n_highest_peaks=n_highest_peaks
             )

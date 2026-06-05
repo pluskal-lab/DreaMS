@@ -59,7 +59,8 @@ class FineTuningHead(pl.LightningModule):
         if isinstance(backbone, Path):
             self.backbone = backbone_cls.load_from_checkpoint(
                 backbone,
-                map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
+                weights_only=False
             )
         else:
             self.backbone = backbone
