@@ -81,3 +81,12 @@ def test_padding():
         [[1, 10, 20, 0, 0], [50, 400, 150, 0, 0]]
     ])
     assert np.array_equal(res, res_ref)
+
+
+def test_to_hot():
+    import torch
+    mzs = torch.tensor([[[100.0], [250.05], [999.99]]])
+    hots = su.to_hot(mzs, max_val=1000.0, bin_size=0.05)
+    assert hots.shape == (1, 3, su.num_hot_classes(1000.0, 0.05))
+    assert (hots.sum(dim=-1) == 1).all()
+    assert hots.argmax(dim=-1).tolist() == [[2000, 5001, su.num_hot_classes(1000.0, 0.05) - 1]]  # m/z at max_val clamps to the last bin

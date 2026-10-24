@@ -658,8 +658,8 @@ def to_classes(
     classes = classes.clamp(max=num_classes - 1)  # clamp not to have a separate class for max_mz
     for i, m in enumerate(special_masks):
         classes[m] = num_classes + i
-    # if return_num_classes:
-    #     return classes, num_classes + len(special_vals)
+    if return_num_classes:
+        return classes, num_classes + len(special_vals)
     return classes
 
 
